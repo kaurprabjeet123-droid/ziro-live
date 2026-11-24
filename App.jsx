@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LISTINGS, RENTALS, ADS, CHATS, REVIEWS, CITIES, CATEGORIES, GIFT_TILES } from './data/listings.js'
+import { LISTINGS, RENTALS, ADS, CHATS, REVIEWS, CITIES, CATEGORIES, GIFT_TILES } from './listings.js'
 
 const SITE = import.meta.env.VITE_SITE_URL || 'https://ziro.site'
 const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d } catch { return d } }
