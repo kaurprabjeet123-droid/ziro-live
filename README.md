@@ -9,6 +9,17 @@ It does **not** depend on Muse.
 - 43 seed listings across 10 GTA cities, Rent It, Best deals, Local deals,
   Saved / Watch / price-drop alerts, Chat, Sell / Your listings, ads,
   payment-methods demo, Terms / Privacy / Safety / Launch checklist
+- **Real photos**: the original's own photo assets are bundled in
+  `public/assets/` (43 listing photos, banner, logo, 2 ad videos) —
+  no emoji tiles anywhere. Rent rate is the original's formula:
+  about 4% of the price a day ($2 minimum), deposit half the price.
+- Home order matches the original: banner, Rent It (8 cheapest),
+  ad spotlight, Gift them home / Cook with heart / Game like a gamer /
+  Move like an athlete photo tiles, Best deals ($25 and under, cheapest
+  first), Local deals ($25 and under within 5 km, nearest first),
+  Recently viewed, All listings grid with city filter + sort.
+- SNAP IT is only a small scan icon inside the search bar, no text;
+  Take Photo opens the live camera (`capture="environment"`).
 
 ## What works now
 
@@ -34,9 +45,21 @@ It does **not** depend on Muse.
   Never put secrets in code — use Vercel environment variables.
 - **Real payments** — the checkout is a demo: no real money moves.
   Real charging needs Stripe, set up with an adult.
-- **Real photos** — listings use emoji tiles here; add photo upload
-  (e.g. Cloudinary / Supabase Storage) later.
+- **Real photos** — seed listings now use the original's bundled photos.
+  Photos for *new* listings a user uploads in the Sell form are stored
+  in the browser only (localStorage); a shared photo store
+  (e.g. Cloudinary / Supabase Storage) is still needed for a real launch.
 - Apple sign-in is **not** included — the user declined it ($99/year).
+
+## Publish-ready check (2026-11-23, not published)
+
+- `npm run build` passes (Vite, 32 modules, ~225 kB JS / ~70 kB gzip).
+- Built site serves all 47 assets (photos, logo, banner, 2 ad videos).
+- Bundle contains the exact 43 listings, showcase sections, ad titles,
+  footer links and all 19 info pages; no emoji tiles remain in the code.
+- **NOT published**: nothing was committed to GitHub, nothing deployed
+  to Vercel, no domain added, no link shared. Show the user first and
+  ask before publishing.
 
 ## OAuth — already registered
 
