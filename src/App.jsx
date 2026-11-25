@@ -503,14 +503,6 @@ export default function App() {
             {localDeals.length === 0 ? <p>No local deals yet — be the first to list something!</p> : <div className="hscroll">{localDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
           </section>
 
-          <section>
-            <div className="sec-head"><h2>All listings</h2><span className="small">{all.length} listings</span></div>
-            <div className="filters">
-              <select value={city} onChange={e => setCity(e.target.value)}><option>All cities</option>{CITIES.map(c => <option key={c}>{c}</option>)}</select>
-              <select value={sort} onChange={e => setSort(e.target.value)}><option>Newest</option><option>Price low to high</option><option>Price high to low</option><option>Nearest</option></select>
-            </div>
-            {all.length === 0 && <p>No listings yet — be the first to list something! <button className="btn teal" onClick={() => openSell()}>List yours right now!</button></p>}<div className="grid">{[...all].filter(p => city === 'All cities' || p.city === city).sort((a, b) => sort === 'Price low to high' ? a.price - b.price : sort === 'Price high to low' ? b.price - a.price : sort === 'Nearest' ? a.distanceKm - b.distanceKm : b.id - a.id).map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
-          </section>
         </div>
       </>}
 
