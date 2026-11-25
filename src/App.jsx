@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LISTINGS, RENTALS, ADS, CHATS, REVIEWS, CITIES, CATEGORIES, SHOWCASE, FOOTER, INFO, rentOf, depOf } from './data/listings.js'
+import { LISTINGS, ADS, CHATS, REVIEWS, CITIES, CATEGORIES, SHOWCASE, FOOTER, INFO, rentOf, depOf } from './data/listings.js'
 
 const SITE = import.meta.env.VITE_SITE_URL || 'https://ziro.site'
 // OAuth client IDs are NOT read from build-time VITE_* vars here.
@@ -57,15 +57,23 @@ function Card({ p, saved, onSave, onOpen, onWatch, watched }) {
   )
 }
 
+// Showcase groups (lamp, clock, ...) come from the item's title, so a
+// real listing a user creates still lands in the right collection.
+const GROUP_WORDS = ['lamp', 'clock', 'dumbbell', 'candle', 'vase', 'mirror', 'cushion', 'plant', 'rug', 'controller', 'audio']
+function groupOf(title, category) {
+  const t = String(title || '').toLowerCase()
+  for (const w of GROUP_WORDS) if (t.includes(w)) return w
+  return String(category || '').toLowerCase()
+}
 function matchesFilter(p, f, saved, recent) {
   if (!f) return true
   switch (f.kind) {
     case 'cat': return f.value === 'All' || p.category === f.value
-    case 'group': return p.group === f.value
+    case 'group': return p.group === f.value || (p.title + ' ' + p.desc).toLowerCase().includes(String(f.value).toLowerCase())
     case 'keyword': return (p.title + ' ' + p.desc).toLowerCase().includes(String(f.value).toLowerCase())
     case 'theme':
       if (f.value === 'home') return p.category === 'Home'
-      if (f.value === 'kitchen') return p.group === 'kitchen'
+      if (f.value === 'kitchen') return p.category === 'Home'
       if (f.value === 'gamer') return p.category === 'Games'
       if (f.value === 'sports') return p.category === 'Sports'
       return true
@@ -116,6 +124,7 @@ export default function App() {
   const [snapPhoto, setSnapPhoto] = useState(null)
   const [snapCat, setSnapCat] = useState('All')
   const [adForm, setAdForm] = useState({ business: '', title: '', desc: '', type: 'image', link: '', place: 'Home page banner' })
+  const [adMedia, setAdMedia] = useState(null)
   const [sellPhoto, setSellPhoto] = useState(null)
   const [form, setForm] = useState({ email: '', store: '', title: '', price: '', desc: '', category: 'Clothing', city: 'Toronto', condition: 'Used', shipping: 5, distance: 10, returns: 'No returns', offers: true, quantity: 1, specifics: '' })
   const fileRef = useRef(null)
@@ -255,26 +264,20 @@ export default function App() {
         body: JSON.stringify({ code, redirectUri: window.location.origin + `/signin/${provider}/cb` }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok || !data.email) {
+      if (!res.ok || (!data.email && !data.name)) {
         setOauth({ provider, phase: 'error', message: data.message || `Sign-in with ${label} did not work. Please try again.` })
         return
       }
-      // eBay-style step: show the details Google/Facebook sent, and
-      // let one tap create the ziro account from them. No password,
-      // no phone code.
-      setOauth({ provider, phase: 'confirm', name: data.name, email: data.email })
+      // No create-account step: sign straight in and go to the homepage.
+      // No password, no phone code.
+      setUser({ name: data.name || (data.email ? data.email.split('@')[0] : label), email: data.email, how: label })
+      setOauth(null)
+      setShowSignin(false)
+      try { window.history.replaceState({}, '', '/') } catch { /* ignore */ }
+      goRoute('home')
     } catch (e) {
       setOauth({ provider, phase: 'error', message: 'Could not reach ziro to finish signing in. Check your connection and try again.' })
     }
-  }
-  function confirmOAuthAccount() {
-    if (!oauth || !oauth.email) return
-    const label = oauth.provider === 'google' ? 'Google' : 'Facebook'
-    setUser({ name: oauth.name || oauth.email.split('@')[0], email: oauth.email, how: label })
-    setOauth(null)
-    setShowSignin(false)
-    try { window.history.replaceState({}, '', '/') } catch { /* ignore */ }
-    goRoute('home')
   }
   // On load, catch the return from Google / Facebook.
   useEffect(() => {
@@ -308,7 +311,8 @@ export default function App() {
     if (sort === 'Newest') list = [...list].sort((a, b) => b.id - a.id)
     return list
   }, [all, browse, category, city, sort, saved, recent])
-  const bestDeals = useMemo(() => [...all].filter(p => p.price <= 25).sort((a, b) => a.price - b.price).slice(0, 8), [all])
+  const bestDeals = useMemo(() => [...all].sort((a, b) => a.price - b.price).slice(0, 8), [all])
+  const rentals = useMemo(() => [...all].sort((a, b) => a.price - b.price || b.id - a.id).slice(0, 8), [all])
   const localDeals = useMemo(() => all.filter(p => p.price <= 25 && p.distanceKm <= 5).sort((a, b) => a.distanceKm - b.distanceKm), [all])
   const unread = notifications.filter(n => !n.read).length
 
@@ -324,11 +328,11 @@ export default function App() {
   // Login gate: signed-out visitors can look around, but any click that
   // DOES something sends them to the sign-in modal instead.
   function needLogin() { if (user) return false; openSignin('signin'); return true }
-  function openSell() { if (needLogin()) return; setShowSell(true) }
+  function openSell() { if (needLogin()) return; setForm(f => ({ ...f, email: user?.email || f.email })); setShowSell(true) }
   function startCheckout(c) { if (needLogin()) return; setCheckout(c) }
   function toggleSave(id) { if (needLogin()) return; setSaved(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]) }
   function toggleWatch(id) { if (needLogin()) return; setWatched(w => w.includes(id) ? w.filter(x => x !== id) : [...w, id]) }
-  function goBrowse(f) { setBrowse(f || null); setCategory(f && f.kind === 'cat' ? f.value : 'All'); setRoute('browse'); setInfoKey(null); window.scrollTo(0, 0) }
+  function goBrowse(f) { setBrowse(f || null); setCategory(f && f.kind === 'cat' ? f.value : 'All'); if (f && f.kind === 'deals') setSort('Price low to high'); if (f && f.kind === 'local') setSort('Nearest'); setRoute('browse'); setInfoKey(null); window.scrollTo(0, 0) }
   function goInfo(key) { setInfoKey(key); setRoute('info'); window.scrollTo(0, 0) }
   const PROTECTED_ROUTES = ['saved', 'alerts', 'chat', 'ads', 'pay', 'mine']
   function goRoute(r) { if (!user && PROTECTED_ROUTES.includes(r)) { openSignin('signin'); return } setRoute(r); setInfoKey(null); window.scrollTo(0, 0) }
@@ -348,25 +352,26 @@ export default function App() {
     if (target === 'chat') return goRoute('chat')
     if (target.startsWith('info:')) return goInfo(target.slice(5))
     if (target.startsWith('hub:')) return goInfo(target.slice(4))
-    if (target.startsWith('theme:')) return goBrowse({ kind: 'theme', value: target.slice(6), title: target.slice(6) })
+    if (target.startsWith('theme:')) { const v = target.slice(6); const t = v === 'home' ? 'Gift them home' : v === 'kitchen' ? 'Cook with heart' : v === 'gamer' ? 'Game like a gamer' : 'Move like an athlete'; return goBrowse({ kind: 'theme', value: v, title: t }) }
   }
   function submitSell(e) {
     e.preventDefault()
     if (needLogin()) return
-    if (!form.title || !form.price) return alert('Add a title and a price.')
+    if (!form.title || !form.price || Number(form.price) <= 0) return alert('Add a title and a price over $0.')
     const price = Number(form.price)
-    const item = { id: Date.now(), title: form.title, price, rentPerDay: rentOf(price), rentDeposit: depOf(price), category: form.category, city: form.city, distanceKm: 1, condition: form.condition, seller: user ? '@' + user.name.toLowerCase().replace(/\s+/g, '_') : '@you', time: 'Just now', photo: sellPhoto || '/assets/mysterybox.jpg', group: form.category.toLowerCase(), desc: form.desc || 'Listed on ziro.', shipping: Number(form.shipping || 0), specs: form.specifics || '', clicks: 0, seed: false, store: form.store, email: form.email, returns: form.returns, offers: form.offers, quantity: Number(form.quantity || 1) }
+    const item = { id: Date.now(), title: form.title, price, rentPerDay: rentOf(price), rentDeposit: depOf(price), category: form.category, city: form.city, distanceKm: 1, condition: form.condition, seller: user ? '@' + user.name.toLowerCase().replace(/\s+/g, '_') : '@you', time: 'Just now', photo: sellPhoto || '/assets/mysterybox.jpg', group: groupOf(form.title, form.category), desc: form.desc || 'Listed on ziro.', shipping: Number(form.shipping || 0), specs: form.specifics || '', clicks: 0, seed: false, store: form.store, email: form.email, returns: form.returns, offers: form.offers, quantity: Number(form.quantity || 1) }
     setUserListings(u => [item, ...u]); setShowSell(false); setSellPhoto(null)
     setForm({ email: '', store: '', title: '', price: '', desc: '', category: 'Clothing', city: 'Toronto', condition: 'Used', shipping: 5, distance: 10, returns: 'No returns', offers: true, quantity: 1, specifics: '' })
     goRoute('mine')
   }
   function saveEdit(id, title, price, desc) {
     if (needLogin()) return
-    setUserListings(u => u.map(p => {
-      if (p.id !== id) return p
-      if (price < p.price && watched.includes(id)) setNotifications(n => [{ id: Date.now(), text: `Price drop: ${p.title} is now $${price}`, read: false }, ...n])
-      return { ...p, title, price, desc, rentPerDay: rentOf(price), rentDeposit: depOf(price) }
-    })); setEditId(null)
+    const old = userListings.find(p => p.id === id)
+    if (old && price < old.price && watched.includes(id)) {
+      setNotifications(n => [{ id: Date.now(), text: `Price drop: ${old.title} is now $${price}`, read: false }, ...n])
+    }
+    setUserListings(u => u.map(p => p.id === id ? { ...p, title, price, desc, rentPerDay: rentOf(price), rentDeposit: depOf(price) } : p))
+    setEditId(null)
   }
   function deleteListing(id) { if (needLogin()) return; if (confirm('Delete this listing?')) setUserListings(u => u.filter(p => p.id !== id)) }
   function luhn(num) { let s = 0, alt = false; for (let i = num.length - 1; i >= 0; i--) { let d = +num[i]; if (alt) { d *= 2; if (d > 9) d -= 9 } s += d; alt = !alt } return num.length >= 15 && s % 10 === 0 }
@@ -390,6 +395,7 @@ export default function App() {
     setCheckout(null)
   }
   function openSignin(mode) { setSigninMode(mode === 'create' ? 'create' : 'signin'); setOauth(null); setShowSignin(true) }
+  function doSearch() { const q = query.trim(); if (!q) { goBrowse(null); return } goBrowse({ kind: 'keyword', value: q, title: `Results for \u201c${q}\u201d` }) }
   function messageSeller(p) {
     if (needLogin()) return
     const existing = chats.find(c => c.user === p.seller)
@@ -402,8 +408,8 @@ export default function App() {
     if (needLogin()) return
     if (!adForm.business || !adForm.title) return alert('Add a business name and an ad title.')
     const price = adForm.type === 'video' ? 2.99 : 0.99
-    const item = { id: Date.now(), business: adForm.business, title: adForm.title, desc: adForm.desc, type: adForm.type, media: '/assets/logo.png', listingId: null, place: adForm.place, clicks: 0, price, status: 'PENDING' }
-    setAds(a => [...a, item]); setAdForm({ business: '', title: '', desc: '', type: 'image', link: '', place: 'Home page banner' })
+    const item = { id: Date.now(), business: adForm.business, title: adForm.title, desc: adForm.desc, type: adForm.type, media: adMedia || null, listingId: null, place: adForm.place, clicks: 0, price, status: 'PENDING' }
+    setAds(a => [...a, item]); setAdMedia(null); setAdForm({ business: '', title: '', desc: '', type: 'image', link: '', place: 'Home page banner' })
     alert('Ad submitted. It stays PENDING and invisible until paid, then it goes LIVE.')
   }
   function onPhotoFile(e, setter) {
@@ -423,9 +429,9 @@ export default function App() {
         <div className="topbar">
           <button className="logo" onClick={() => goRoute('home')} aria-label="ziro home"><img src="/assets/logo.png" alt="ziro" /></button>
           <div className="searchbar">
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search for items" aria-label="Search for items" />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search for items" aria-label="Search for items" onKeyDown={e => { if (e.key === 'Enter') doSearch() }} />
             <button className="snapbtn" title="SNAP IT" aria-label="SNAP IT" onClick={() => setShowSnap(true)}><ScanIcon /></button>
-            <button className="searchbtn" onClick={() => goBrowse(null)}>Search</button>
+            <button className="searchbtn" onClick={doSearch}>Search</button>
           </div>
           <button className="sellbtn" onClick={() => openSell()}>SELL +</button>
           {user && <button className="acctbtn" onClick={() => goRoute('account')} aria-label="Your account">{user.name[0].toUpperCase()}</button>}
@@ -456,15 +462,15 @@ export default function App() {
           <section>
             <div className="sec-head"><h2>Rent It</h2><button className="seeall" onClick={() => goBrowse({ kind: 'rent', title: 'Rent It' })}>Browse rentals</button></div>
             <p className="sec-sub">Instead of buying, rent it by the day — daily rate on every card, plus a refundable deposit</p>
-            {RENTALS.length === 0 ? <p>No rentals yet — be the first to list something!</p> : <div className="hscroll">{RENTALS.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
+            {rentals.length === 0 ? <p className="empty">No rentals yet — be the first to list something!</p> : <div className="hscroll">{rentals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
           </section>
 
           {ad && <div className="adspot" style={{ opacity: adFade ? 0 : 1 }} aria-label="Featured spotlight">
-            <div className="ad-art">
+            {ad.media && <div className="ad-art">
               {ad.type === 'video' && String(ad.media).endsWith('.mp4')
                 ? <video src={ad.media} autoPlay muted loop playsInline />
                 : <img src={ad.media} alt={ad.title} />}
-            </div>
+            </div>}
             <div className="ad-txt">
               <div className="ad-biz">{ad.business}</div>
               <div className="ad-title">{ad.title}</div>
@@ -488,7 +494,7 @@ export default function App() {
           <section>
             <div className="sec-head"><h2>Best deals</h2><button className="seeall" onClick={() => goBrowse({ kind: 'deals', title: 'Best deals' })}>See all</button></div>
             <p className="sec-sub">The lowest prices on ZIRO right now</p>
-            {bestDeals.length === 0 ? <p>No best deals yet — be the first to list something!</p> : <div className="hscroll">{bestDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
+            {bestDeals.length === 0 ? <p className="empty">No best deals yet — be the first to list something!</p> : <div className="hscroll">{bestDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
           </section>
 
           {recent.length > 0 && <section>
@@ -500,7 +506,7 @@ export default function App() {
           <section>
             <div className="sec-head"><h2>Local deals near you</h2><button className="seeall" onClick={() => goBrowse({ kind: 'local', title: 'Local deals near you' })}>See all</button></div>
             <p className="sec-sub">Listings $25 and under within 5 km of you, nearest first</p>
-            {localDeals.length === 0 ? <p>No local deals yet — be the first to list something!</p> : <div className="hscroll">{localDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
+            {localDeals.length === 0 ? <p className="empty">No local deals yet — be the first to list something!</p> : <div className="hscroll">{localDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
           </section>
 
         </div>
@@ -514,7 +520,7 @@ export default function App() {
           <span className="small">{filtered.length} listings</span>
         </div>
         {browse && browse.kind === 'recent' && recent.length > 0 && <p><button className="btn ghost" onClick={() => { if (needLogin()) return; setRecent([]) }}>Clear history</button></p>}
-        {filtered.length === 0 && <p>No listings yet — be the first to list something! <button className="btn teal" onClick={() => openSell()}>List yours right now!</button></p>}
+        {filtered.length === 0 && <p className="empty">No listings yet — be the first to list something! <button className="btn teal" onClick={() => openSell()}>List yours right now!</button></p>}
         <div className="grid">{filtered.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
       </div>}
 
@@ -550,7 +556,7 @@ export default function App() {
 
       {route === 'alerts' && <div className="wrap"><h2>Notifications</h2><button className="btn ghost" onClick={() => setNotifications(n => n.map(x => ({ ...x, read: true })))}>Mark all read</button>{' '}<button className="btn ghost" onClick={() => setNotifications([])}>Clear</button>{notifications.length === 0 && <p>No notifications yet. Watch a listing and you will be told if its price drops.</p>}{notifications.map(n => <p key={n.id}>{n.read ? '' : '● '}{n.text}</p>)}</div>}
 
-      {route === 'chat' && <div className="wrap"><h2>Chat</h2>{chats.length === 0 && <p>No chats yet. Message a seller from a listing to start chatting.</p>}{chats.map(c => <div key={c.id} className="panel" role="button" onClick={() => setShowChat(c)}><b>{c.user}</b> — {c.item}<p className="small">{c.messages[c.messages.length - 1].text}</p></div>)}
+      {route === 'chat' && <div className="wrap"><h2>Chat</h2>{chats.length === 0 && <p>No chats yet. Message a seller from a listing to start chatting.</p>}{chats.map(c => <div key={c.id} className="panel" role="button" onClick={() => setShowChat(c)}><b>{c.user}</b> — {c.item}<p className="small">{c.messages.length ? c.messages[c.messages.length - 1].text : 'Say hello to start chatting.'}</p></div>)}
         {showChat && <div className="panel"><h3>{showChat.user}</h3>{showChat.messages.map((m, i) => <p key={i}><b>{m.from === 'me' ? 'You' : showChat.user}:</b> {m.text}</p>)}<input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Type a message" /><button className="btn" onClick={() => { if (needLogin()) return; if (!chatText) return; const msg = { from: 'me', text: chatText }; setChats(cs => cs.map(c => c.id === showChat.id ? { ...c, messages: [...c.messages, msg] } : c)); setShowChat(s => ({ ...s, messages: [...s.messages, msg] })); setChatText('') }}>Send</button></div>}
       </div>}
 
@@ -562,6 +568,9 @@ export default function App() {
           <label>Ad title</label><input value={adForm.title} onChange={e => setAdForm({ ...adForm, title: e.target.value })} />
           <label>Description</label><textarea value={adForm.desc} onChange={e => setAdForm({ ...adForm, desc: e.target.value })} />
           <label>Ad type</label><select value={adForm.type} onChange={e => setAdForm({ ...adForm, type: e.target.value })}><option value="image">Image ad — $0.99</option><option value="video">Video ad — $2.99</option></select>
+          <label>{adForm.type === 'video' ? 'Video' : 'Photo'}</label>
+          <input type="file" accept={adForm.type === 'video' ? 'video/*' : 'image/*'} onChange={e => onPhotoFile(e, setAdMedia)} />
+          {adMedia && <p className="small">Your {adForm.type === 'video' ? 'video' : 'photo'} is attached.</p>}
           <label>Link / contact</label><input value={adForm.link} onChange={e => setAdForm({ ...adForm, link: e.target.value })} placeholder="yourshop.example" />
           <p className="small">Ads show only on the home page banner.</p>
           <button className="btn">Submit ad</button>
@@ -576,17 +585,18 @@ export default function App() {
         <h2>Recent payments</h2>{payments.length === 0 ? <p>No payments yet.</p> : payments.map(p => <p key={p.id}>{p.label} — ${p.amount} · {p.date}</p>)}
       </div>}
 
-      {route === 'account' && <div className="wrap"><h2>Your account</h2>{user ? <><p><b>{user.name}</b><br />{user.email}<br />Signed in with: {user.how}<br />Status: Active</p><button className="btn ghost" onClick={() => openSignin('create')}>Sign in with a different account</button>{' '}<button className="btn ghost" onClick={() => goRoute('mine')}>Your listings</button>{' '}<button className="btn ghost" onClick={() => goRoute('saved')}>Saved items</button>{' '}<button className="btn ghost" onClick={() => goRoute('pay')}>Payment methods</button>{' '}<button className="btn" onClick={() => { setUser(null); goRoute('home') }}>Sign out</button></> : <p>Not signed in. <button className="btn" onClick={() => openSignin('signin')}>Sign in</button></p>}</div>}
+      {route === 'account' && <div className="wrap"><h2>Your account</h2>{user ? <><p><b>{user.name}</b><br />{user.email}<br />Signed in with: {user.how}<br />Status: Active</p><button className="btn ghost" onClick={() => openSignin('signin')}>Sign in with a different account</button>{' '}<button className="btn ghost" onClick={() => goRoute('mine')}>Your listings</button>{' '}<button className="btn ghost" onClick={() => goRoute('saved')}>Saved items</button>{' '}<button className="btn ghost" onClick={() => goRoute('pay')}>Payment methods</button>{' '}<button className="btn" onClick={() => { setUser(null); goRoute('home') }}>Sign out</button></> : <p>Not signed in. <button className="btn" onClick={() => openSignin('signin')}>Sign in</button></p>}</div>}
 
       {route === 'info' && info && <div className="wrap"><p className="small">{info.tag}</p><h2>{info.t}</h2><p>{info.intro}</p>
         {(info.sections || []).map(([h, b], i) => <div key={i}><h3>{h}</h3><p>{b}</p></div>)}
         {(info.bullets || []).length > 0 && <ul>{info.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>}
+        {(info.links || []).length > 0 && <div className="panel">{info.links.map(([label, target]) => <p key={label}><button className="btn ghost" onClick={() => openFooterLink(target)}>{label}</button></p>)}</div>}
         {info.action && <button className="btn" onClick={() => openFooterLink(info.action[1])}>{info.action[0]}</button>}{' '}
         <button className="btn ghost" onClick={() => goRoute('home')}>Back to homepage</button>
       </div>}
 
       <footer>
-        {FOOTER.map(([col, , links]) => <div key={col}><h4>{col}</h4>{links.map(([label, target]) => <button key={label} onClick={() => openFooterLink(target)}>{label}</button>)}</div>)}
+        {FOOTER.map(([col, hub, links]) => <div key={col}><h4><button className="hubbtn" onClick={() => openFooterLink(hub)}>{col}</button></h4>{links.map(([label, target]) => <button key={label} onClick={() => openFooterLink(target)}>{label}</button>)}</div>)}
       </footer>
       <p className="small" style={{ textAlign: 'center', padding: '0 0 20px' }}>ziro — List it. Sell it. Rent it. · ziro takes 10% from every sale · {SITE}</p>
 
@@ -596,13 +606,7 @@ export default function App() {
             in ZIRO at all — the buttons below send you to Google's and
             Facebook's own official sign-in pages, and they send you back
             here. No Apple sign-in. */}
-        {oauth && oauth.phase === 'confirm' ? <>
-          <h3>Create an account</h3>
-          <p>We&rsquo;ll use your {oauth.provider === 'google' ? 'Google' : 'Facebook'} details to create your ziro account.</p>
-          <p><b>{oauth.name}</b><br />{oauth.email}</p>
-          <button className="btn teal" onClick={confirmOAuthAccount}>Create account</button>{' '}
-          <button className="btn ghost" onClick={() => setOauth(null)}>Not you? Pick a different account</button>
-        </> : <>
+        <>
           <h3>{signinMode === 'create' ? 'Create an account' : 'Sign in to your account'}</h3>
           {signinMode === 'create'
             ? <p className="small">We&rsquo;ll use your Google or Facebook details to create your ziro account. Pick one below — you sign in on their own official page, then come straight back here.</p>
@@ -611,8 +615,8 @@ export default function App() {
           {oauth && oauth.phase === 'fetching' && <div className="panel"><p>{oauth.message}</p></div>}
           {oauth && oauth.phase === 'error' && <div className="panel"><p>{oauth.message}</p><button className="btn ghost" onClick={() => setOauth(null)}>Try again</button></div>}
           {(!oauth || oauth.phase === 'error') && <>
-            <button className="social" style={{ display: 'block', width: '100%', textAlign: 'center' }} onClick={startGoogle}>Continue with Google</button>
-            <button className="social" style={{ display: 'block', width: '100%', textAlign: 'center' }} onClick={startFacebook}>Continue with Facebook</button>
+            <button className="social" onClick={startGoogle}><span className="slogo" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.5 6.1 29.5 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.5 6.1 29.5 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.4-11.3-8.1l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z"/></svg></span>Continue with Google</button>
+            <button className="social" onClick={startFacebook}><span className="slogo fb" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24"><path fill="#fff" d="M13.5 21v-7h2.4l.4-3h-2.8V9.1c0-.9.3-1.5 1.6-1.5h1.3V4.9c-.3 0-1.1-.1-2.1-.1-2.1 0-3.6 1.3-3.6 3.7V11H8.3v3h2.4v7h2.8z"/></svg></span>Continue with Facebook</button>
           </>}
           <p className="small">You pick your account on Google&rsquo;s or Facebook&rsquo;s own official page. No password is typed into ziro.</p>
         </>}
@@ -633,6 +637,7 @@ export default function App() {
         <label>Title</label><input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
         <label>Photo</label>
         <input type="file" accept="image/*" onChange={e => onPhotoFile(e, setSellPhoto)} />
+        <label className="btn teal" style={{ display: 'inline-block', textAlign: 'center', marginTop: 6 }}>Take Photo<input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => onPhotoFile(e, setSellPhoto)} /></label>
         {sellPhoto && <img src={sellPhoto} alt="Your item" style={{ maxWidth: '100%', maxHeight: 180, objectFit: 'contain' }} />}
         <label>Description</label><textarea value={form.desc} onChange={e => setForm({ ...form, desc: e.target.value })} />
         <label>Price ($)</label><input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
@@ -654,5 +659,5 @@ export default function App() {
 
 function EditForm({ p, onSave }) {
   const [t, setT] = useState(p.title); const [pr, setPr] = useState(p.price); const [d, setD] = useState(p.desc)
-  return <div style={{ marginTop: 10 }}><input value={t} onChange={e => setT(e.target.value)} /><input type="number" value={pr} onChange={e => setPr(Number(e.target.value))} /><input value={d} onChange={e => setD(e.target.value)} /><button className="btn" onClick={() => onSave(p.id, t, pr, d)}>Save (price drop notifies watchers)</button></div>
+  return <div style={{ marginTop: 10 }}><label>Title</label><input value={t} onChange={e => setT(e.target.value)} /><label>Price ($)</label><input type="number" value={pr} onChange={e => setPr(Number(e.target.value))} /><label>Description</label><input value={d} onChange={e => setD(e.target.value)} /><button className="btn" onClick={() => onSave(p.id, t, pr, d)}>Save (price drop notifies watchers)</button></div>
 }

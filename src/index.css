@@ -2,6 +2,7 @@
 a{color:#141b56} button,select,input,textarea{font-family:inherit;cursor:pointer}
 button{cursor:pointer} input,select,textarea{cursor:text}
 button:hover,[role=button]:hover,select:hover,summary:hover{cursor:pointer}
+header{position:sticky;top:0;background:#fff;z-index:5}
 .topbar{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid #ddd}
 .logo{background:none;border:0;padding:0;flex:none}
 .logo img{display:block;height:36px;width:auto}
@@ -31,15 +32,21 @@ button:hover,[role=button]:hover,select:hover,summary:hover{cursor:pointer}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 .hscroll{display:flex;gap:14px;overflow-x:auto;padding-bottom:6px}
 .hscroll .card{flex:0 0 220px}
-@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}.banner h1{font-size:22px}.row2{padding-left:16px}.b-photo{width:38%}}
+@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}.banner h1{font-size:22px}.row2{padding-left:16px}.b-photo{width:38%}.topbar{flex-wrap:wrap}.searchbar{order:3;flex:1 1 100%;max-width:none}.sellbtn{margin-left:auto}}
 .card{border:1px solid #ddd;border-radius:6px;overflow:hidden;background:#fff;text-align:left;padding:0}
+.card:hover{border-color:#00b0a9}
+.tile:hover{border-color:#00b0a9}
+.btn:hover,.sellbtn:hover,.searchbtn:hover{opacity:.9}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #00b0a9;outline-offset:1px}
+.empty{background:#f6f6f8;border:1px solid #ddd;border-radius:6px;padding:16px;text-align:center}
+.hubbtn{background:none;border:0;padding:0;font:inherit;font-weight:800;color:#141b56;text-align:left;cursor:pointer}
 .card .img{position:relative;aspect-ratio:1/1;background:#f2f5f7;overflow:hidden}
 .card .img img{width:100%;height:100%;object-fit:cover;display:block}
 .card .clicks{position:absolute;right:6px;bottom:6px;background:rgba(20,27,86,.75);color:#fff;font-size:11px;padding:2px 6px;border-radius:4px}
 .card .body{padding:10px}.card .price{font-weight:800;font-size:17px}
 .card .title{font-size:14px;margin:4px 0}.card .meta{font-size:12px;color:#555}
 .heart{float:right;border:0;background:#fff;font-size:18px}
-.heart.on{color:#d61f4e}
+.heart.on{color:#00b0a9}
 .watchbtn{margin-top:8px;padding:6px 10px;background:#fff;color:#141b56;border:1px solid #141b56;border-radius:4px}
 h2{font-size:20px;margin:22px 0 10px}
 .tiles{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
@@ -70,8 +77,10 @@ footer button{display:block;background:none;border:0;padding:3px 0;text-align:le
 footer h4{margin:0 0 8px}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
 .modal .box{background:#fff;border-radius:8px;padding:20px;max-width:520px;width:100%;max-height:90vh;overflow:auto}
-.social{width:100%;padding:12px;margin:8px 0;border:1px solid #ccc;background:#fff;border-radius:4px;font-weight:700}
-.badge{background:#e00;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px}
+.social{width:100%;padding:12px;margin:8px 0;border:1px solid #8f8f8f;background:#fff;border-radius:999px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px;color:#141b56}
+.social .slogo{display:flex;align-items:center;justify-content:center;width:24px;height:24px;flex:none}
+.social .slogo.fb{background:#1877f2;border-radius:50%}
+.badge{background:#141b56;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px}
 .note{background:#eef7f7;border:1px solid #00b0a9;border-radius:6px;padding:12px;margin:12px 0;font-size:14px}
 .small{font-size:13px;color:#555}
 .rec{display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #eee}
