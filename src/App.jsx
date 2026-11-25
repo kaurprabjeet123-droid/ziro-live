@@ -619,7 +619,7 @@ export default function App() {
             <button className="social" onClick={startFacebook}><span className="slogo fb" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24"><path fill="#fff" d="M13.5 21v-7h2.4l.4-3h-2.8V9.1c0-.9.3-1.5 1.6-1.5h1.3V4.9c-.3 0-1.1-.1-2.1-.1-2.1 0-3.6 1.3-3.6 3.7V11H8.3v3h2.4v7h2.8z"/></svg></span>Continue with Facebook</button>
           </>}
           <p className="small">You pick your account on Google&rsquo;s or Facebook&rsquo;s own official page. No password is typed into ziro.</p>
-        </>}
+        </>
         <button className="btn ghost" onClick={() => setShowSignin(false)}>Back to homepage</button>
       </div></div>}
 
