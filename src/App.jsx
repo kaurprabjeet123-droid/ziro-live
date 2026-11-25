@@ -10,6 +10,26 @@ const SITE = import.meta.env.VITE_SITE_URL || 'https://ziro.site'
 // (like a username); the secrets never leave the server.
 const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d } catch { return d } }
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* storage full (photos) — keep going */ } }
+// --- Per-user storage (v2) + old-demo purge ---
+// Old demo data (Sneaker Spot / Game Zone / Home Nest / Cycle City ads,
+// the 43 sample listings) lived under the old shared keys (ziro_ads,
+// ziro_saved, ...). Those keys are NEVER read again: everything now
+// lives under ziro_v2_u_<user>_<thing>, so a browser that visited the
+// old demo shows no ads and no products. On first load we also delete
+// the old shared keys outright, so the demo data is gone for good.
+const DEMO_AD_BUSINESSES = ['Sneaker Spot', 'Game Zone', 'Home Nest', 'Cycle City']
+const userIdOf = (u) => u ? String(u.email || u.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'user' : null
+const perKey = (base, usr) => { const id = userIdOf(usr); return id ? `ziro_v2_u_${id}_${base}` : `ziro_v2_${base}` }
+const readKey = (k) => { try { const v = localStorage.getItem(k); return v == null ? undefined : JSON.parse(v) } catch { return undefined } }
+const cleanAds = (arr) => (Array.isArray(arr) ? arr : []).filter(a => a && !DEMO_AD_BUSINESSES.includes(a.business))
+const cleanListings = (arr) => (Array.isArray(arr) ? arr : []).filter(x => x && !x.seed)
+const loadFor = (base, def, usr) => {
+  const v = readKey(perKey(base, usr))
+  if (v === undefined) return def
+  if (base === 'ads') return cleanAds(v)
+  if (base === 'mine') return cleanListings(v)
+  return v
+}
 const sellerKey = (s) => String(s || '').replace(/^@/, '')
 
 function ScanIcon() {
@@ -70,27 +90,28 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [product, setProduct] = useState(null)
   const [rentDays, setRentDays] = useState(3)
-  const [saved, setSaved] = useState(() => load('ziro_saved', []))
-  const [watched, setWatched] = useState(() => load('ziro_watched', []))
-  const [userListings, setUserListings] = useState(() => load('ziro_mine', []))
-  const [notifications, setNotifications] = useState(() => load('ziro_notes', []))
-  const [recent, setRecent] = useState(() => load('ziro_recent', []))
   const [user, setUser] = useState(() => load('ziro_user', null))
+  const loadedForRef = useRef(userIdOf(load('ziro_user', null)))
+  const [saved, setSaved] = useState(() => loadFor('saved', [], load('ziro_user', null)))
+  const [watched, setWatched] = useState(() => loadFor('watched', [], load('ziro_user', null)))
+  const [userListings, setUserListings] = useState(() => loadFor('mine', [], load('ziro_user', null)))
+  const [notifications, setNotifications] = useState(() => loadFor('notes', [], load('ziro_user', null)))
+  const [recent, setRecent] = useState(() => loadFor('recent', [], load('ziro_user', null)))
   const [showSignin, setShowSignin] = useState(false)
   const [signinMode, setSigninMode] = useState('signin') // 'signin' | 'create' — both use only Google / Facebook, like eBay
   const [showSnap, setShowSnap] = useState(false)
   const [showSell, setShowSell] = useState(false)
   const [showChat, setShowChat] = useState(null)
-  const [ads, setAds] = useState(() => load('ziro_ads', ADS))
+  const [ads, setAds] = useState(() => loadFor('ads', ADS, load('ziro_user', null)))
   const [adIndex, setAdIndex] = useState(0)
   const [adFade, setAdFade] = useState(false)
-  const [payments, setPayments] = useState(() => load('ziro_payments', []))
-  const [cards, setCards] = useState(() => load('ziro_cards', []))
+  const [payments, setPayments] = useState(() => loadFor('payments', [], load('ziro_user', null)))
+  const [cards, setCards] = useState(() => loadFor('cards', [], load('ziro_user', null)))
   const [editId, setEditId] = useState(null)
   const [offer, setOffer] = useState('')
   const [chatText, setChatText] = useState('')
-  const [chats, setChats] = useState(CHATS)
-  const [reports, setReports] = useState(() => load('ziro_reports', []))
+  const [chats, setChats] = useState(() => loadFor('chats', CHATS, load('ziro_user', null)))
+  const [reports, setReports] = useState(() => loadFor('reports', [], load('ziro_user', null)))
   const [checkout, setCheckout] = useState(null) // {label, amount}
   const [snapPhoto, setSnapPhoto] = useState(null)
   const [snapCat, setSnapCat] = useState('All')
@@ -102,16 +123,47 @@ export default function App() {
   const [oauth, setOauth] = useState(null) // {provider, phase, name, email, message}
   const oauthHandledRef = useRef(false)
 
-  useEffect(() => save('ziro_saved', saved), [saved])
-  useEffect(() => save('ziro_watched', watched), [watched])
-  useEffect(() => save('ziro_mine', userListings), [userListings])
-  useEffect(() => save('ziro_notes', notifications), [notifications])
-  useEffect(() => save('ziro_recent', recent), [recent])
+  // Purge old demo data once: delete every old shared ziro_* key except
+  // the signed-in session (ziro_user) and the new v2 keys. A browser that
+  // visited the old demo then has no stored ads/listings/chats left.
+  useEffect(() => {
+    try {
+      const dead = []
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('ziro_') && k !== 'ziro_user' && !k.startsWith('ziro_v2_')) dead.push(k) }
+      dead.forEach(k => localStorage.removeItem(k))
+    } catch { /* ignore */ }
+  }, [])
+  // When the signed-in user changes, load THAT user's saved/watched/
+  // listings/recent/chats/ads/payments — never another user's. Signed
+  // out means empty lists. Declared before the save effects so the
+  // load reads the new user's stored data before any save writes.
+  useEffect(() => {
+    const id = userIdOf(user)
+    if (loadedForRef.current === id) return
+    loadedForRef.current = id
+    if (!user) { setSaved([]); setWatched([]); setUserListings([]); setNotifications([]); setRecent([]); setPayments([]); setCards([]); setAds([]); setReports([]); setChats([]); return }
+    setSaved(loadFor('saved', [], user))
+    setWatched(loadFor('watched', [], user))
+    setUserListings(loadFor('mine', [], user))
+    setNotifications(loadFor('notes', [], user))
+    setRecent(loadFor('recent', [], user))
+    setPayments(loadFor('payments', [], user))
+    setCards(loadFor('cards', [], user))
+    setAds(loadFor('ads', ADS, user))
+    setReports(loadFor('reports', [], user))
+    setChats(loadFor('chats', CHATS, user))
+  }, [user])
+  useEffect(() => { if (user) save(perKey('saved', user), saved) }, [saved, user])
+  useEffect(() => { if (user) save(perKey('watched', user), watched) }, [watched, user])
+  useEffect(() => { if (user) save(perKey('mine', user), userListings) }, [userListings, user])
+  useEffect(() => { if (user) save(perKey('notes', user), notifications) }, [notifications, user])
+  useEffect(() => { if (user) save(perKey('recent', user), recent) }, [recent, user])
   useEffect(() => save('ziro_user', user), [user])
-  useEffect(() => save('ziro_payments', payments), [payments])
-  useEffect(() => save('ziro_cards', cards), [cards])
-  useEffect(() => save('ziro_ads', ads), [ads])
-  useEffect(() => save('ziro_reports', reports), [reports])
+  useEffect(() => { if (user) save(perKey('payments', user), payments) }, [payments, user])
+  useEffect(() => { if (user) save(perKey('cards', user), cards) }, [cards, user])
+  useEffect(() => { if (user) save(perKey('ads', user), ads) }, [ads, user])
+  useEffect(() => { if (user) save(perKey('reports', user), reports) }, [reports, user])
+  useEffect(() => { if (user) save(perKey('chats', user), chats) }, [chats, user])
 
   // --- Real Google / Facebook sign-in (OAuth, like eBay) ---
   // Start: send the user to Google's / Facebook's own official page
@@ -264,14 +316,22 @@ export default function App() {
     const withClick = { ...p, clicks: (p.clicks || 0) + 1 }
     if (p.seed) { /* seed clicks are session-only */ } else setUserListings(u => u.map(x => x.id === p.id ? withClick : x))
     setProduct(withClick); setRentDays(3); setRoute('product')
-    setRecent(r => [p.id, ...r.filter(id => id !== p.id)].slice(0, 8))
+    // Recently viewed is per signed-in user only — signed-out visitors
+    // can inspect a listing, but nothing is recorded for them.
+    if (user) setRecent(r => [p.id, ...r.filter(id => id !== p.id)].slice(0, 8))
     window.scrollTo(0, 0)
   }
-  function toggleSave(id) { setSaved(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]) }
-  function toggleWatch(id) { setWatched(w => w.includes(id) ? w.filter(x => x !== id) : [...w, id]) }
+  // Login gate: signed-out visitors can look around, but any click that
+  // DOES something sends them to the sign-in modal instead.
+  function needLogin() { if (user) return false; openSignin('signin'); return true }
+  function openSell() { if (needLogin()) return; setShowSell(true) }
+  function startCheckout(c) { if (needLogin()) return; setCheckout(c) }
+  function toggleSave(id) { if (needLogin()) return; setSaved(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]) }
+  function toggleWatch(id) { if (needLogin()) return; setWatched(w => w.includes(id) ? w.filter(x => x !== id) : [...w, id]) }
   function goBrowse(f) { setBrowse(f || null); setCategory(f && f.kind === 'cat' ? f.value : 'All'); setRoute('browse'); setInfoKey(null); window.scrollTo(0, 0) }
   function goInfo(key) { setInfoKey(key); setRoute('info'); window.scrollTo(0, 0) }
-  function goRoute(r) { setRoute(r); setInfoKey(null); window.scrollTo(0, 0) }
+  const PROTECTED_ROUTES = ['saved', 'alerts', 'chat', 'ads', 'pay', 'mine']
+  function goRoute(r) { if (!user && PROTECTED_ROUTES.includes(r)) { openSignin('signin'); return } setRoute(r); setInfoKey(null); window.scrollTo(0, 0) }
   function openFooterLink(target) {
     if (target === 'all') return goBrowse(null)
     if (target === 'rent') return goBrowse({ kind: 'rent', title: 'Rent It' })
@@ -281,7 +341,7 @@ export default function App() {
     if (target === 'saved') return goRoute('saved')
     if (target === 'alerts') return goRoute('alerts')
     if (target === 'pay') return goRoute('pay')
-    if (target === 'sell') return setShowSell(true)
+    if (target === 'sell') return openSell()
     if (target === 'your') return goRoute('mine')
     if (target === 'snap') return setShowSnap(true)
     if (target === 'ads') return goRoute('ads')
@@ -292,6 +352,7 @@ export default function App() {
   }
   function submitSell(e) {
     e.preventDefault()
+    if (needLogin()) return
     if (!form.title || !form.price) return alert('Add a title and a price.')
     const price = Number(form.price)
     const item = { id: Date.now(), title: form.title, price, rentPerDay: rentOf(price), rentDeposit: depOf(price), category: form.category, city: form.city, distanceKm: 1, condition: form.condition, seller: user ? '@' + user.name.toLowerCase().replace(/\s+/g, '_') : '@you', time: 'Just now', photo: sellPhoto || '/assets/mysterybox.jpg', group: form.category.toLowerCase(), desc: form.desc || 'Listed on ziro.', shipping: Number(form.shipping || 0), specs: form.specifics || '', clicks: 0, seed: false, store: form.store, email: form.email, returns: form.returns, offers: form.offers, quantity: Number(form.quantity || 1) }
@@ -300,16 +361,18 @@ export default function App() {
     goRoute('mine')
   }
   function saveEdit(id, title, price, desc) {
+    if (needLogin()) return
     setUserListings(u => u.map(p => {
       if (p.id !== id) return p
       if (price < p.price && watched.includes(id)) setNotifications(n => [{ id: Date.now(), text: `Price drop: ${p.title} is now $${price}`, read: false }, ...n])
       return { ...p, title, price, desc, rentPerDay: rentOf(price), rentDeposit: depOf(price) }
     })); setEditId(null)
   }
-  function deleteListing(id) { if (confirm('Delete this listing?')) setUserListings(u => u.filter(p => p.id !== id)) }
+  function deleteListing(id) { if (needLogin()) return; if (confirm('Delete this listing?')) setUserListings(u => u.filter(p => p.id !== id)) }
   function luhn(num) { let s = 0, alt = false; for (let i = num.length - 1; i >= 0; i--) { let d = +num[i]; if (alt) { d *= 2; if (d > 9) d -= 9 } s += d; alt = !alt } return num.length >= 15 && s % 10 === 0 }
   function addCard(e) {
     e.preventDefault()
+    if (needLogin()) return
     const f = new FormData(e.target)
     const num = String(f.get('number')).replace(/\s+/g, '')
     if (!luhn(num)) return alert('Check the card number.')
@@ -317,6 +380,7 @@ export default function App() {
     e.target.reset()
   }
   function payCheckout() {
+    if (needLogin()) return
     const card = cards[0]
     if (!checkout) return
     if (!card) return alert('Add a payment method first (Pay page). This demo stores only card brand, last 4 and expiry — no real money moves.')
@@ -327,6 +391,7 @@ export default function App() {
   }
   function openSignin(mode) { setSigninMode(mode === 'create' ? 'create' : 'signin'); setOauth(null); setShowSignin(true) }
   function messageSeller(p) {
+    if (needLogin()) return
     const existing = chats.find(c => c.user === p.seller)
     if (existing) { setShowChat(existing); goRoute('chat'); return }
     const thread = { id: Date.now(), user: p.seller, item: `${p.title} $${p.price}`, messages: [{ from: 'me', text: `Hi! Is the ${p.title} still available?` }] }
@@ -334,6 +399,7 @@ export default function App() {
   }
   function submitAd(e) {
     e.preventDefault()
+    if (needLogin()) return
     if (!adForm.business || !adForm.title) return alert('Add a business name and an ad title.')
     const price = adForm.type === 'video' ? 2.99 : 0.99
     const item = { id: Date.now(), business: adForm.business, title: adForm.title, desc: adForm.desc, type: adForm.type, media: '/assets/logo.png', listingId: null, place: adForm.place, clicks: 0, price, status: 'PENDING' }
@@ -361,7 +427,7 @@ export default function App() {
             <button className="snapbtn" title="SNAP IT" aria-label="SNAP IT" onClick={() => setShowSnap(true)}><ScanIcon /></button>
             <button className="searchbtn" onClick={() => goBrowse(null)}>Search</button>
           </div>
-          <button className="sellbtn" onClick={() => setShowSell(true)}>SELL</button>
+          <button className="sellbtn" onClick={() => openSell()}>SELL</button>
           {user && <button className="acctbtn" onClick={() => goRoute('account')} aria-label="Your account">{user.name[0].toUpperCase()}</button>}
         </div>
         <div className="row2">
@@ -383,7 +449,7 @@ export default function App() {
       {route === 'home' && <>
         <div className="wrap">
           <div className="banner">
-            <div className="b-txt"><h1>List it, Sell it</h1><p>Snap your sneakers, post them, get paid. That fast.</p><button onClick={() => setShowSell(true)}>List yours right now!</button></div>
+            <div className="b-txt"><h1>List it, Sell it</h1><p>Snap your sneakers, post them, get paid. That fast.</p><button onClick={() => openSell()}>List yours right now!</button></div>
             <img className="b-photo" src="/assets/banner.jpg" alt="Person taking a photo of sneakers they want to sell" />
           </div>
 
@@ -403,7 +469,7 @@ export default function App() {
               <div className="ad-biz">{ad.business}</div>
               <div className="ad-title">{ad.title}</div>
               <p>{ad.desc}</p>
-              {all.find(x => x.id === ad.listingId) && <button className="btn teal" onClick={() => { setAds(a => a.map(x => x.id === ad.id ? { ...x, clicks: x.clicks + 1 } : x)); const p = all.find(x => x.id === ad.listingId); if (p) openProduct(p) }}>See listing</button>}
+              {all.find(x => x.id === ad.listingId) && <button className="btn teal" onClick={() => { if (needLogin()) return; setAds(a => a.map(x => x.id === ad.id ? { ...x, clicks: x.clicks + 1 } : x)); const p = all.find(x => x.id === ad.listingId); if (p) openProduct(p) }}>See listing</button>}
               <div className="ad-meta"><span>{ad.place}</span><span>·</span><span>{ad.clicks} clicks</span></div>
             </div>
           </div>}
@@ -425,17 +491,17 @@ export default function App() {
             {bestDeals.length === 0 ? <p>No best deals yet — be the first to list something!</p> : <div className="hscroll">{bestDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
           </section>
 
+          {recent.length > 0 && <section>
+            <div className="sec-head"><h2>Recently viewed</h2><button className="seeall" onClick={() => goBrowse({ kind: 'recent', title: 'Recently viewed' })}>See all</button></div>
+            <div className="hscroll">{recent.map(id => all.find(p => p.id === id)).filter(Boolean).map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
+            <button className="btn ghost" onClick={() => { if (needLogin()) return; setRecent([]) }}>Clear history</button>
+          </section>}
+
           <section>
             <div className="sec-head"><h2>Local deals near you</h2><button className="seeall" onClick={() => goBrowse({ kind: 'local', title: 'Local deals near you' })}>See all</button></div>
             <p className="sec-sub">Listings $25 and under within 5 km of you, nearest first</p>
             {localDeals.length === 0 ? <p>No local deals yet — be the first to list something!</p> : <div className="hscroll">{localDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
           </section>
-
-          {recent.length > 0 && <section>
-            <div className="sec-head"><h2>Recently viewed</h2><button className="seeall" onClick={() => goBrowse({ kind: 'recent', title: 'Recently viewed' })}>See all</button></div>
-            <div className="hscroll">{recent.map(id => all.find(p => p.id === id)).filter(Boolean).map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
-            <button className="btn ghost" onClick={() => setRecent([])}>Clear history</button>
-          </section>}
 
           <section>
             <div className="sec-head"><h2>All listings</h2><span className="small">{all.length} listings</span></div>
@@ -443,7 +509,7 @@ export default function App() {
               <select value={city} onChange={e => setCity(e.target.value)}><option>All cities</option>{CITIES.map(c => <option key={c}>{c}</option>)}</select>
               <select value={sort} onChange={e => setSort(e.target.value)}><option>Newest</option><option>Price low to high</option><option>Price high to low</option><option>Nearest</option></select>
             </div>
-            {all.length === 0 && <p>No listings yet — be the first to list something! <button className="btn teal" onClick={() => setShowSell(true)}>List yours right now!</button></p>}<div className="grid">{[...all].filter(p => city === 'All cities' || p.city === city).sort((a, b) => sort === 'Price low to high' ? a.price - b.price : sort === 'Price high to low' ? b.price - a.price : sort === 'Nearest' ? a.distanceKm - b.distanceKm : b.id - a.id).map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
+            {all.length === 0 && <p>No listings yet — be the first to list something! <button className="btn teal" onClick={() => openSell()}>List yours right now!</button></p>}<div className="grid">{[...all].filter(p => city === 'All cities' || p.city === city).sort((a, b) => sort === 'Price low to high' ? a.price - b.price : sort === 'Price high to low' ? b.price - a.price : sort === 'Nearest' ? a.distanceKm - b.distanceKm : b.id - a.id).map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
           </section>
         </div>
       </>}
@@ -455,7 +521,8 @@ export default function App() {
           <select value={sort} onChange={e => setSort(e.target.value)}><option>Newest</option><option>Price low to high</option><option>Price high to low</option><option>Nearest</option></select>
           <span className="small">{filtered.length} listings</span>
         </div>
-        {filtered.length === 0 && <p>No listings yet — be the first to list something! <button className="btn teal" onClick={() => setShowSell(true)}>List yours right now!</button></p>}
+        {browse && browse.kind === 'recent' && recent.length > 0 && <p><button className="btn ghost" onClick={() => { if (needLogin()) return; setRecent([]) }}>Clear history</button></p>}
+        {filtered.length === 0 && <p>No listings yet — be the first to list something! <button className="btn teal" onClick={() => openSell()}>List yours right now!</button></p>}
         <div className="grid">{filtered.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
       </div>}
 
@@ -469,17 +536,17 @@ export default function App() {
           {product.specs && <p className="small"><b>Item specifics:</b> {product.specs}</p>}
           <button className="btn ghost" onClick={() => toggleSave(product.id)}>{saved.includes(product.id) ? '♥ Saved' : '♡ Save'}</button>{' '}
           <button className="btn ghost" onClick={() => toggleWatch(product.id)}>{watched.includes(product.id) ? '✓ Watching' : 'Watch'}</button>{' '}
-          <button className="btn ghost" onClick={() => { navigator.clipboard?.writeText(SITE + '/listing/' + product.id); alert('Link copied to share.') }}>Share</button>{' '}
-          <button className="btn ghost" onClick={() => { const r = prompt('Report this listing — what is wrong? (e.g. scam, wrong item, rude seller, other)'); if (r) { setReports(x => [...x, { id: Date.now(), listing: product.title, reason: r }]); alert('Thanks. Your report was sent.') } }}>Report</button>
+          <button className="btn ghost" onClick={() => { if (needLogin()) return; navigator.clipboard?.writeText(SITE + '/listing/' + product.id); alert('Link copied to share.') }}>Share</button>{' '}
+          <button className="btn ghost" onClick={() => { if (needLogin()) return; const r = prompt('Report this listing — what is wrong? (e.g. scam, wrong item, rude seller, other)'); if (r) { setReports(x => [...x, { id: Date.now(), listing: product.title, reason: r }]); alert('Thanks. Your report was sent.') } }}>Report</button>
         </div>
         <div className="panel"><h3>Rent It</h3>
           <p>Rent it · ${product.rentPerDay}/day · Refundable deposit ${product.rentDeposit} (half the buy price)</p>
           <div className="filters">{[1, 3, 7, 14, 30].map(d => <button key={d} className={'btn ' + (rentDays === d ? '' : 'ghost')} onClick={() => setRentDays(d)}>{d} day{d > 1 ? 's' : ''}</button>)}</div>
           <p><b>Total: ${product.rentPerDay * rentDays + product.rentDeposit}</b> ({rentDays} days × ${product.rentPerDay} + ${product.rentDeposit} deposit)</p>
-          <button className="btn teal" onClick={() => setCheckout({ label: `Rent: ${product.title} (${rentDays} days)`, amount: product.rentPerDay * rentDays + product.rentDeposit })}>Rent It</button>
+          <button className="btn teal" onClick={() => startCheckout({ label: `Rent: ${product.title} (${rentDays} days)`, amount: product.rentPerDay * rentDays + product.rentDeposit })}>Rent It</button>
           <p className="small">No Buy Now — Rent It is the way to get this item.</p>
         </div>
-        {product.offers !== false && <div className="panel"><h3>Make Offer</h3><input type="number" value={offer} onChange={e => setOffer(e.target.value)} placeholder="Your offer in $" /><button className="btn" onClick={() => { if (offer) { alert('Offer sent to ' + product.seller); setOffer('') } }}>Send offer</button></div>}
+        {product.offers !== false && <div className="panel"><h3>Make Offer</h3><input type="number" value={offer} onChange={e => setOffer(e.target.value)} placeholder="Your offer in $" /><button className="btn" onClick={() => { if (needLogin()) return; if (offer) { alert('Offer sent to ' + product.seller); setOffer('') } }}>Send offer</button></div>}
         <div className="panel"><button className="btn" onClick={() => messageSeller(product)}>Message Seller</button></div>
         <div className="panel"><h3>Seller Reviews</h3>{(REVIEWS[sellerKey(product.seller)] || []).length === 0 ? <p>No reviews yet.</p> : (REVIEWS[sellerKey(product.seller)] || []).map((r, i) => <p key={i}>{'★'.repeat(r[1] ?? r.stars)} {r[0] ?? r.user} — {r[2] ?? r.text}</p>)}</div>
         <div className="panel"><h3>Seller Profile</h3><p>{product.seller}</p><div className="grid">{all.filter(p => p.seller === product.seller && p.id !== product.id).slice(0, 4).map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div></div>
@@ -492,12 +559,12 @@ export default function App() {
       {route === 'alerts' && <div className="wrap"><h2>Notifications</h2><button className="btn ghost" onClick={() => setNotifications(n => n.map(x => ({ ...x, read: true })))}>Mark all read</button>{' '}<button className="btn ghost" onClick={() => setNotifications([])}>Clear</button>{notifications.length === 0 && <p>No notifications yet. Watch a listing and you will be told if its price drops.</p>}{notifications.map(n => <p key={n.id}>{n.read ? '' : '● '}{n.text}</p>)}</div>}
 
       {route === 'chat' && <div className="wrap"><h2>Chat</h2>{chats.length === 0 && <p>No chats yet. Message a seller from a listing to start chatting.</p>}{chats.map(c => <div key={c.id} className="panel" role="button" onClick={() => setShowChat(c)}><b>{c.user}</b> — {c.item}<p className="small">{c.messages[c.messages.length - 1].text}</p></div>)}
-        {showChat && <div className="panel"><h3>{showChat.user}</h3>{showChat.messages.map((m, i) => <p key={i}><b>{m.from === 'me' ? 'You' : showChat.user}:</b> {m.text}</p>)}<input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Type a message" /><button className="btn" onClick={() => { if (!chatText) return; const msg = { from: 'me', text: chatText }; setChats(cs => cs.map(c => c.id === showChat.id ? { ...c, messages: [...c.messages, msg] } : c)); setShowChat(s => ({ ...s, messages: [...s.messages, msg] })); setChatText('') }}>Send</button></div>}
+        {showChat && <div className="panel"><h3>{showChat.user}</h3>{showChat.messages.map((m, i) => <p key={i}><b>{m.from === 'me' ? 'You' : showChat.user}:</b> {m.text}</p>)}<input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Type a message" /><button className="btn" onClick={() => { if (needLogin()) return; if (!chatText) return; const msg = { from: 'me', text: chatText }; setChats(cs => cs.map(c => c.id === showChat.id ? { ...c, messages: [...c.messages, msg] } : c)); setShowChat(s => ({ ...s, messages: [...s.messages, msg] })); setChatText('') }}>Send</button></div>}
       </div>}
 
       {route === 'ads' && <div className="wrap"><h2>Advertise</h2><p className="small">Image ad $0.99 · Video ad $2.99. Ads stay PENDING and invisible until paid, then go LIVE. Ads show only on the home page banner. Clicks are tracked — the most-clicked ads show first.</p>
         {ads.length === 0 && <p>No ads yet. Submit your first ad below.</p>}
-        {ads.map(a => <div key={a.id} className="panel"><b>{a.business}</b> — {a.title} · {a.status} · {a.clicks} clicks · ${a.price}<br />{a.status === 'PENDING' && <button className="btn" onClick={() => setCheckout({ label: `Ad: ${a.business}`, amount: a.price, adId: a.id })}>Pay ${a.price} (demo)</button>}{' '}<button className="btn ghost" onClick={() => setAds(x => x.filter(y => y.id !== a.id))}>Delete</button></div>)}
+        {ads.map(a => <div key={a.id} className="panel"><b>{a.business}</b> — {a.title} · {a.status} · {a.clicks} clicks · ${a.price}<br />{a.status === 'PENDING' && <button className="btn" onClick={() => startCheckout({ label: `Ad: ${a.business}`, amount: a.price, adId: a.id })}>Pay ${a.price} (demo)</button>}{' '}<button className="btn ghost" onClick={() => { if (needLogin()) return; setAds(x => x.filter(y => y.id !== a.id)) }}>Delete</button></div>)}
         <div className="panel"><h3>Advertise yours</h3><form onSubmit={submitAd}>
           <label>Business / item name</label><input value={adForm.business} onChange={e => setAdForm({ ...adForm, business: e.target.value })} />
           <label>Ad title</label><input value={adForm.title} onChange={e => setAdForm({ ...adForm, title: e.target.value })} />
