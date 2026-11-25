@@ -427,7 +427,7 @@ export default function App() {
             <button className="snapbtn" title="SNAP IT" aria-label="SNAP IT" onClick={() => setShowSnap(true)}><ScanIcon /></button>
             <button className="searchbtn" onClick={() => goBrowse(null)}>Search</button>
           </div>
-          <button className="sellbtn" onClick={() => openSell()}>SELL</button>
+          <button className="sellbtn" onClick={() => openSell()}>SELL +</button>
           {user && <button className="acctbtn" onClick={() => goRoute('account')} aria-label="Your account">{user.name[0].toUpperCase()}</button>}
         </div>
         <div className="row2">
