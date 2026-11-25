@@ -2,6 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { LISTINGS, RENTALS, ADS, CHATS, REVIEWS, CITIES, CATEGORIES, SHOWCASE, FOOTER, INFO, rentOf, depOf } from './data/listings.js'
 
 const SITE = import.meta.env.VITE_SITE_URL || 'https://ziro.site'
+// OAuth client IDs are NOT read from build-time VITE_* vars here.
+// They are fetched at run time from /api/auth/config (see
+// api/auth/config.js), which reads them from Vercel env vars.
+// That matters: a build-time empty ID made the bundler delete the
+// real Google/Facebook redirect as dead code. The IDs are public
+// (like a username); the secrets never leave the server.
 const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d } catch { return d } }
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* storage full (photos) — keep going */ } }
 const sellerKey = (s) => String(s || '').replace(/^@/, '')
@@ -71,6 +77,7 @@ export default function App() {
   const [recent, setRecent] = useState(() => load('ziro_recent', []))
   const [user, setUser] = useState(() => load('ziro_user', null))
   const [showSignin, setShowSignin] = useState(false)
+  const [signinMode, setSigninMode] = useState('signin') // 'signin' | 'create' — both use only Google / Facebook, like eBay
   const [showSnap, setShowSnap] = useState(false)
   const [showSell, setShowSell] = useState(false)
   const [showChat, setShowChat] = useState(null)
@@ -90,8 +97,10 @@ export default function App() {
   const [adForm, setAdForm] = useState({ business: '', title: '', desc: '', type: 'image', link: '', place: 'Home page banner' })
   const [sellPhoto, setSellPhoto] = useState(null)
   const [form, setForm] = useState({ email: '', store: '', title: '', price: '', desc: '', category: 'Clothing', city: 'Toronto', condition: 'Used', shipping: 5, distance: 10, returns: 'No returns', offers: true, quantity: 1, specifics: '' })
-  const [account, setAccount] = useState({ name: '', email: '' })
   const fileRef = useRef(null)
+  // Real OAuth return flow (like eBay: Google -> back to ziro).
+  const [oauth, setOauth] = useState(null) // {provider, phase, name, email, message}
+  const oauthHandledRef = useRef(false)
 
   useEffect(() => save('ziro_saved', saved), [saved])
   useEffect(() => save('ziro_watched', watched), [watched])
@@ -103,6 +112,128 @@ export default function App() {
   useEffect(() => save('ziro_cards', cards), [cards])
   useEffect(() => save('ziro_ads', ads), [ads])
   useEffect(() => save('ziro_reports', reports), [reports])
+
+  // --- Real Google / Facebook sign-in (OAuth, like eBay) ---
+  // Start: send the user to Google's / Facebook's own official page
+  // with ziro's client ID, asking it to come back to ziro.site (or the
+  // Vercel preview) at /signin/<provider>/cb with a one-time code.
+  // Return: that code is swapped for name + email by the server
+  // function in /api/auth/<provider>.js — the secret never leaves
+  // the server, and no password is ever typed into ziro.
+  function oauthState() {
+    const s = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    try { sessionStorage.setItem('ziro_oauth_state', s) } catch { /* ignore */ }
+    return s
+  }
+  async function getOAuthConfig() {
+    try {
+      const res = await fetch('/api/auth/config')
+      if (!res.ok) return {}
+      return await res.json()
+    } catch { return {} }
+  }
+  function oauthNotSetUp(provider) {
+    const name = provider === 'google' ? 'Google' : 'Facebook'
+    alert(`${name} sign-in is not set up yet. An adult needs to add the ${name} keys in Vercel, under Settings > Environment Variables.`)
+  }
+  async function startGoogle() {
+    // Fetch the public Google client ID from ziro's own server, then
+    // send the user to GOOGLE'S OWN official sign-in page
+    // (accounts.google.com/o/oauth2/v2/auth). Ziro never shows a
+    // Google sign-in page of its own — Google does that part.
+    const { googleClientId } = await getOAuthConfig()
+    if (!googleClientId) { oauthNotSetUp('google'); return }
+    const redirectUri = window.location.origin + '/signin/google/cb'
+    const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+      client_id: googleClientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid email profile',
+      access_type: 'online',
+      prompt: 'select_account',
+      state: oauthState(),
+    })
+    window.location.href = url
+  }
+  async function startFacebook() {
+    // Same as Google: fetch the public Facebook app ID, then send
+    // the user to FACEBOOK'S OWN official sign-in page
+    // (facebook.com/v20.0/dialog/oauth). Ziro never shows a
+    // Facebook sign-in page of its own.
+    const { facebookAppId } = await getOAuthConfig()
+    if (!facebookAppId) { oauthNotSetUp('facebook'); return }
+    const redirectUri = window.location.origin + '/signin/fb/cb'
+    const url = 'https://www.facebook.com/v20.0/dialog/oauth?' + new URLSearchParams({
+      client_id: facebookAppId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'email,public_profile',
+      state: oauthState(),
+    })
+    window.location.href = url
+  }
+  async function finishOAuth(provider) {
+    const params = new URLSearchParams(window.location.search)
+    const label = provider === 'google' ? 'Google' : 'Facebook'
+    if (params.get('error')) {
+      setOauth({ provider, phase: 'error', message: `${label} sign-in was cancelled. You can try again.` })
+      setShowSignin(true)
+      return
+    }
+    const code = params.get('code')
+    if (!code) {
+      setOauth({ provider, phase: 'error', message: `No sign-in code came back from ${label}. Please try signing in again.` })
+      setShowSignin(true)
+      return
+    }
+    let savedState = null
+    try { savedState = sessionStorage.getItem('ziro_oauth_state') } catch { /* ignore */ }
+    if (savedState && params.get('state') && params.get('state') !== savedState) {
+      setOauth({ provider, phase: 'error', message: 'That sign-in did not match this browser. Please try signing in again.' })
+      setShowSignin(true)
+      return
+    }
+    try { sessionStorage.removeItem('ziro_oauth_state') } catch { /* ignore */ }
+    setOauth({ provider, phase: 'fetching', message: `Signing you in with ${label}…` })
+    setShowSignin(true)
+    try {
+      const res = await fetch(`/api/auth/${provider}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, redirectUri: window.location.origin + `/signin/${provider}/cb` }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.email) {
+        setOauth({ provider, phase: 'error', message: data.message || `Sign-in with ${label} did not work. Please try again.` })
+        return
+      }
+      // eBay-style step: show the details Google/Facebook sent, and
+      // let one tap create the ziro account from them. No password,
+      // no phone code.
+      setOauth({ provider, phase: 'confirm', name: data.name, email: data.email })
+    } catch (e) {
+      setOauth({ provider, phase: 'error', message: 'Could not reach ziro to finish signing in. Check your connection and try again.' })
+    }
+  }
+  function confirmOAuthAccount() {
+    if (!oauth || !oauth.email) return
+    const label = oauth.provider === 'google' ? 'Google' : 'Facebook'
+    setUser({ name: oauth.name || oauth.email.split('@')[0], email: oauth.email, how: label })
+    setOauth(null)
+    setShowSignin(false)
+    try { window.history.replaceState({}, '', '/') } catch { /* ignore */ }
+    goRoute('home')
+  }
+  // On load, catch the return from Google / Facebook.
+  useEffect(() => {
+    if (oauthHandledRef.current) return
+    const path = window.location.pathname
+    const provider = path === '/signin/google/cb' ? 'google' : path === '/signin/fb/cb' ? 'facebook' : null
+    if (!provider) return
+    oauthHandledRef.current = true
+    finishOAuth(provider)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const liveAds = useMemo(() => ads.filter(a => a.status === 'LIVE'), [ads])
   useEffect(() => {
@@ -194,22 +325,18 @@ export default function App() {
     alert('Paid (demo). No real money moved.')
     setCheckout(null)
   }
-  function signInLocal() {
-    if (!account.name || !account.email) return alert('Enter your name and email.')
-    setUser({ name: account.name, email: account.email, how: 'Email' }); setShowSignin(false)
-  }
+  function openSignin(mode) { setSigninMode(mode === 'create' ? 'create' : 'signin'); setOauth(null); setShowSignin(true) }
   function messageSeller(p) {
     const existing = chats.find(c => c.user === p.seller)
     if (existing) { setShowChat(existing); goRoute('chat'); return }
     const thread = { id: Date.now(), user: p.seller, item: `${p.title} $${p.price}`, messages: [{ from: 'me', text: `Hi! Is the ${p.title} still available?` }] }
     setChats(cs => [thread, ...cs]); setShowChat(thread); goRoute('chat')
-    setTimeout(() => setChats(cs => cs.map(c => c.id === thread.id ? { ...c, messages: [...c.messages, { from: 'them', text: 'Hi! Yes, it is still available. Want to meet up?' }] } : c)), 1500)
   }
   function submitAd(e) {
     e.preventDefault()
     if (!adForm.business || !adForm.title) return alert('Add a business name and an ad title.')
     const price = adForm.type === 'video' ? 2.99 : 0.99
-    const item = { id: Date.now(), business: adForm.business, title: adForm.title, desc: adForm.desc, type: adForm.type, media: adForm.type === 'video' ? '/assets/ad-gamezone.mp4' : '/assets/dunk.jpg', listingId: 1, place: adForm.place, clicks: 0, price, status: 'PENDING' }
+    const item = { id: Date.now(), business: adForm.business, title: adForm.title, desc: adForm.desc, type: adForm.type, media: '/assets/logo.png', listingId: null, place: adForm.place, clicks: 0, price, status: 'PENDING' }
     setAds(a => [...a, item]); setAdForm({ business: '', title: '', desc: '', type: 'image', link: '', place: 'Home page banner' })
     alert('Ad submitted. It stays PENDING and invisible until paid, then it goes LIVE.')
   }
@@ -244,14 +371,14 @@ export default function App() {
           <button onClick={() => goRoute('ads')}>Ads · from $0.99</button>
           <button onClick={() => goRoute('pay')}>Pay</button>
           {user ? <button onClick={() => goRoute('account')}>{user.name}</button> : <>
-            <button className="login" onClick={() => setShowSignin(true)}>Log in</button>
-            <button className="signin" onClick={() => setShowSignin(true)}>Sign in</button>
+            <button className="login" onClick={() => openSignin('signin')}>Log in</button>
+            <button className="signin" onClick={() => openSignin('signin')}>Sign in</button>
           </>}
         </div>
         <div className="cats">{CATEGORIES.map(c => <button key={c} className={category === c && route === 'browse' ? 'on' : ''} onClick={() => goBrowse({ kind: 'cat', value: c, title: c === 'All' ? 'All listings' : c })}>{c}</button>)}</div>
       </header>
 
-      {query && route === 'home' && <div className="wrap"><div className="panel"><b>Recommendations</b>{recs.map(p => <div key={p.id} className="rec" role="button" onClick={() => openProduct(p)}><img src={p.photo} alt="" /> {p.title} — ${p.price}</div>)}</div></div>}
+      {query && route === 'home' && recs.length > 0 && <div className="wrap"><div className="panel"><b>Recommendations</b>{recs.map(p => <div key={p.id} className="rec" role="button" onClick={() => openProduct(p)}><img src={p.photo} alt="" /> {p.title} — ${p.price}</div>)}</div></div>}
 
       {route === 'home' && <>
         <div className="wrap">
@@ -263,12 +390,12 @@ export default function App() {
           <section>
             <div className="sec-head"><h2>Rent It</h2><button className="seeall" onClick={() => goBrowse({ kind: 'rent', title: 'Rent It' })}>Browse rentals</button></div>
             <p className="sec-sub">Instead of buying, rent it by the day — daily rate on every card, plus a refundable deposit</p>
-            <div className="hscroll">{RENTALS.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
+            {RENTALS.length === 0 ? <p>No rentals yet — be the first to list something!</p> : <div className="hscroll">{RENTALS.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
           </section>
 
           {ad && <div className="adspot" style={{ opacity: adFade ? 0 : 1 }} aria-label="Featured spotlight">
             <div className="ad-art">
-              {ad.type === 'video'
+              {ad.type === 'video' && String(ad.media).endsWith('.mp4')
                 ? <video src={ad.media} autoPlay muted loop playsInline />
                 : <img src={ad.media} alt={ad.title} />}
             </div>
@@ -276,7 +403,7 @@ export default function App() {
               <div className="ad-biz">{ad.business}</div>
               <div className="ad-title">{ad.title}</div>
               <p>{ad.desc}</p>
-              <button className="btn teal" onClick={() => { setAds(a => a.map(x => x.id === ad.id ? { ...x, clicks: x.clicks + 1 } : x)); const p = all.find(x => x.id === ad.listingId); if (p) openProduct(p) }}>See listing</button>
+              {all.find(x => x.id === ad.listingId) && <button className="btn teal" onClick={() => { setAds(a => a.map(x => x.id === ad.id ? { ...x, clicks: x.clicks + 1 } : x)); const p = all.find(x => x.id === ad.listingId); if (p) openProduct(p) }}>See listing</button>}
               <div className="ad-meta"><span>{ad.place}</span><span>·</span><span>{ad.clicks} clicks</span></div>
             </div>
           </div>}
@@ -295,13 +422,13 @@ export default function App() {
           <section>
             <div className="sec-head"><h2>Best deals</h2><button className="seeall" onClick={() => goBrowse({ kind: 'deals', title: 'Best deals' })}>See all</button></div>
             <p className="sec-sub">The lowest prices on ZIRO right now</p>
-            <div className="hscroll">{bestDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
+            {bestDeals.length === 0 ? <p>No best deals yet — be the first to list something!</p> : <div className="hscroll">{bestDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
           </section>
 
           <section>
             <div className="sec-head"><h2>Local deals near you</h2><button className="seeall" onClick={() => goBrowse({ kind: 'local', title: 'Local deals near you' })}>See all</button></div>
             <p className="sec-sub">Listings $25 and under within 5 km of you, nearest first</p>
-            <div className="hscroll">{localDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
+            {localDeals.length === 0 ? <p>No local deals yet — be the first to list something!</p> : <div className="hscroll">{localDeals.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>}
           </section>
 
           {recent.length > 0 && <section>
@@ -316,7 +443,7 @@ export default function App() {
               <select value={city} onChange={e => setCity(e.target.value)}><option>All cities</option>{CITIES.map(c => <option key={c}>{c}</option>)}</select>
               <select value={sort} onChange={e => setSort(e.target.value)}><option>Newest</option><option>Price low to high</option><option>Price high to low</option><option>Nearest</option></select>
             </div>
-            <div className="grid">{[...all].filter(p => city === 'All cities' || p.city === city).sort((a, b) => sort === 'Price low to high' ? a.price - b.price : sort === 'Price high to low' ? b.price - a.price : sort === 'Nearest' ? a.distanceKm - b.distanceKm : b.id - a.id).map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
+            {all.length === 0 && <p>No listings yet — be the first to list something! <button className="btn teal" onClick={() => setShowSell(true)}>List yours right now!</button></p>}<div className="grid">{[...all].filter(p => city === 'All cities' || p.city === city).sort((a, b) => sort === 'Price low to high' ? a.price - b.price : sort === 'Price high to low' ? b.price - a.price : sort === 'Nearest' ? a.distanceKm - b.distanceKm : b.id - a.id).map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
           </section>
         </div>
       </>}
@@ -328,7 +455,7 @@ export default function App() {
           <select value={sort} onChange={e => setSort(e.target.value)}><option>Newest</option><option>Price low to high</option><option>Price high to low</option><option>Nearest</option></select>
           <span className="small">{filtered.length} listings</span>
         </div>
-        {filtered.length === 0 && <p>No listings here yet.</p>}
+        {filtered.length === 0 && <p>No listings yet — be the first to list something! <button className="btn teal" onClick={() => setShowSell(true)}>List yours right now!</button></p>}
         <div className="grid">{filtered.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
       </div>}
 
@@ -354,21 +481,22 @@ export default function App() {
         </div>
         {product.offers !== false && <div className="panel"><h3>Make Offer</h3><input type="number" value={offer} onChange={e => setOffer(e.target.value)} placeholder="Your offer in $" /><button className="btn" onClick={() => { if (offer) { alert('Offer sent to ' + product.seller); setOffer('') } }}>Send offer</button></div>}
         <div className="panel"><button className="btn" onClick={() => messageSeller(product)}>Message Seller</button></div>
-        <div className="panel"><h3>Seller Reviews</h3>{(REVIEWS[sellerKey(product.seller)] || [{ user: '@happy_buyer', stars: 5, text: 'Fast reply, item exactly as described.' }]).map((r, i) => <p key={i}>{'★'.repeat(r[1] ?? r.stars)} {r[0] ?? r.user} — {r[2] ?? r.text}</p>)}</div>
+        <div className="panel"><h3>Seller Reviews</h3>{(REVIEWS[sellerKey(product.seller)] || []).length === 0 ? <p>No reviews yet.</p> : (REVIEWS[sellerKey(product.seller)] || []).map((r, i) => <p key={i}>{'★'.repeat(r[1] ?? r.stars)} {r[0] ?? r.user} — {r[2] ?? r.text}</p>)}</div>
         <div className="panel"><h3>Seller Profile</h3><p>{product.seller}</p><div className="grid">{all.filter(p => p.seller === product.seller && p.id !== product.id).slice(0, 4).map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div></div>
       </div>}
 
       {route === 'saved' && <div className="wrap"><h2>Saved items</h2>{saved.length === 0 && <p>No saved items yet. Tap the heart on a listing.</p>}<div className="grid">{all.filter(p => saved.includes(p.id)).map(p => <Card key={p.id} p={p} saved onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div><h2>Watching</h2>{watched.length === 0 ? <p>Nothing watched yet. Watch a listing and you will be told if its price drops.</p> : all.filter(p => watched.includes(p.id)).map(p => <p key={p.id}><img src={p.photo} alt="" style={{ width: 40, height: 40, objectFit: 'cover', verticalAlign: 'middle' }} /> {p.title} — ${p.price}</p>)}</div>}
 
-      {route === 'mine' && <div className="wrap"><h2>Your listings</h2>{userListings.length === 0 && <p>You have not listed anything yet.</p>}{userListings.map(p => <div key={p.id} className="panel"><img src={p.photo} alt="" style={{ width: 60, height: 60, objectFit: 'cover', verticalAlign: 'middle' }} /> <b>{p.title} — ${p.price}</b>{' '}<button className="btn ghost" onClick={() => openProduct(p)}>View</button>{' '}<button className="btn ghost" onClick={() => setEditId(editId === p.id ? null : p.id)}>{editId === p.id ? 'Close edit' : 'Edit'}</button>{' '}<button className="btn ghost" onClick={() => deleteListing(p.id)}>Delete</button>{editId === p.id && <EditForm p={p} onSave={saveEdit} />}</div>)}<p className="small">Seed listings cannot be deleted — only listings you create here. Tap the three dots on a listing to view, edit or delete it.</p></div>}
+      {route === 'mine' && <div className="wrap"><h2>Your listings</h2>{userListings.length === 0 && <p>You have not listed anything yet.</p>}{userListings.map(p => <div key={p.id} className="panel"><img src={p.photo} alt="" style={{ width: 60, height: 60, objectFit: 'cover', verticalAlign: 'middle' }} /> <b>{p.title} — ${p.price}</b>{' '}<button className="btn ghost" onClick={() => openProduct(p)}>View</button>{' '}<button className="btn ghost" onClick={() => setEditId(editId === p.id ? null : p.id)}>{editId === p.id ? 'Close edit' : 'Edit'}</button>{' '}<button className="btn ghost" onClick={() => deleteListing(p.id)}>Delete</button>{editId === p.id && <EditForm p={p} onSave={saveEdit} />}</div>)}<p className="small">Only listings you create here appear here. Use View, Edit or Delete on a listing to manage it.</p></div>}
 
       {route === 'alerts' && <div className="wrap"><h2>Notifications</h2><button className="btn ghost" onClick={() => setNotifications(n => n.map(x => ({ ...x, read: true })))}>Mark all read</button>{' '}<button className="btn ghost" onClick={() => setNotifications([])}>Clear</button>{notifications.length === 0 && <p>No notifications yet. Watch a listing and you will be told if its price drops.</p>}{notifications.map(n => <p key={n.id}>{n.read ? '' : '● '}{n.text}</p>)}</div>}
 
-      {route === 'chat' && <div className="wrap"><h2>Chat</h2>{chats.map(c => <div key={c.id} className="panel" role="button" onClick={() => setShowChat(c)}><b>{c.user}</b> — {c.item}<p className="small">{c.messages[c.messages.length - 1].text}</p></div>)}
+      {route === 'chat' && <div className="wrap"><h2>Chat</h2>{chats.length === 0 && <p>No chats yet. Message a seller from a listing to start chatting.</p>}{chats.map(c => <div key={c.id} className="panel" role="button" onClick={() => setShowChat(c)}><b>{c.user}</b> — {c.item}<p className="small">{c.messages[c.messages.length - 1].text}</p></div>)}
         {showChat && <div className="panel"><h3>{showChat.user}</h3>{showChat.messages.map((m, i) => <p key={i}><b>{m.from === 'me' ? 'You' : showChat.user}:</b> {m.text}</p>)}<input value={chatText} onChange={e => setChatText(e.target.value)} placeholder="Type a message" /><button className="btn" onClick={() => { if (!chatText) return; const msg = { from: 'me', text: chatText }; setChats(cs => cs.map(c => c.id === showChat.id ? { ...c, messages: [...c.messages, msg] } : c)); setShowChat(s => ({ ...s, messages: [...s.messages, msg] })); setChatText('') }}>Send</button></div>}
       </div>}
 
       {route === 'ads' && <div className="wrap"><h2>Advertise</h2><p className="small">Image ad $0.99 · Video ad $2.99. Ads stay PENDING and invisible until paid, then go LIVE. Ads show only on the home page banner. Clicks are tracked — the most-clicked ads show first.</p>
+        {ads.length === 0 && <p>No ads yet. Submit your first ad below.</p>}
         {ads.map(a => <div key={a.id} className="panel"><b>{a.business}</b> — {a.title} · {a.status} · {a.clicks} clicks · ${a.price}<br />{a.status === 'PENDING' && <button className="btn" onClick={() => setCheckout({ label: `Ad: ${a.business}`, amount: a.price, adId: a.id })}>Pay ${a.price} (demo)</button>}{' '}<button className="btn ghost" onClick={() => setAds(x => x.filter(y => y.id !== a.id))}>Delete</button></div>)}
         <div className="panel"><h3>Advertise yours</h3><form onSubmit={submitAd}>
           <label>Business / item name</label><input value={adForm.business} onChange={e => setAdForm({ ...adForm, business: e.target.value })} />
@@ -384,12 +512,12 @@ export default function App() {
 
       {route === 'pay' && <div className="wrap"><h2>Payment methods</h2><p className="small">Demo checkout — no real money moves. Only card brand, last 4 digits and expiry are stored.</p>
         {checkout && <div className="panel"><h3>Checkout</h3><p>{checkout.label} — <b>${checkout.amount}</b></p><button className="btn teal" onClick={payCheckout}>Pay ${checkout.amount} (demo)</button>{' '}<button className="btn ghost" onClick={() => setCheckout(null)}>Cancel</button></div>}
-        <form onSubmit={addCard}><label>Name on card</label><input name="name" placeholder="Your name" /><label>Card number</label><input name="number" placeholder="4242 4242 4242 4242" /><label>Expiry</label><input name="expiry" placeholder="12/28" /><label>CVC</label><input name="cvc" placeholder="123" /><button className="btn">Add card</button></form>
+        <form onSubmit={addCard}><label>Name on card</label><input name="name" placeholder="Your name" /><label>Card number</label><input name="number" placeholder="Card number" /><label>Expiry</label><input name="expiry" placeholder="12/28" /><label>CVC</label><input name="cvc" placeholder="123" /><button className="btn">Add card</button></form>
         {cards.map((c, i) => <p key={i}>{c.brand} ···· {c.last4} · Expires {c.expiry}</p>)}
         <h2>Recent payments</h2>{payments.length === 0 ? <p>No payments yet.</p> : payments.map(p => <p key={p.id}>{p.label} — ${p.amount} · {p.date}</p>)}
       </div>}
 
-      {route === 'account' && <div className="wrap"><h2>Your account</h2>{user ? <><p><b>{user.name}</b><br />{user.email}<br />Signed in with: {user.how}<br />Status: Active</p><button className="btn ghost" onClick={() => setShowSignin(true)}>Create new account</button>{' '}<button className="btn ghost" onClick={() => goRoute('mine')}>Your listings</button>{' '}<button className="btn ghost" onClick={() => goRoute('saved')}>Saved items</button>{' '}<button className="btn ghost" onClick={() => goRoute('pay')}>Payment methods</button>{' '}<button className="btn" onClick={() => { setUser(null); goRoute('home') }}>Sign out</button></> : <p>Not signed in. <button className="btn" onClick={() => setShowSignin(true)}>Sign in</button></p>}</div>}
+      {route === 'account' && <div className="wrap"><h2>Your account</h2>{user ? <><p><b>{user.name}</b><br />{user.email}<br />Signed in with: {user.how}<br />Status: Active</p><button className="btn ghost" onClick={() => openSignin('create')}>Sign in with a different account</button>{' '}<button className="btn ghost" onClick={() => goRoute('mine')}>Your listings</button>{' '}<button className="btn ghost" onClick={() => goRoute('saved')}>Saved items</button>{' '}<button className="btn ghost" onClick={() => goRoute('pay')}>Payment methods</button>{' '}<button className="btn" onClick={() => { setUser(null); goRoute('home') }}>Sign out</button></> : <p>Not signed in. <button className="btn" onClick={() => openSignin('signin')}>Sign in</button></p>}</div>}
 
       {route === 'info' && info && <div className="wrap"><p className="small">{info.tag}</p><h2>{info.t}</h2><p>{info.intro}</p>
         {(info.sections || []).map(([h, b], i) => <div key={i}><h3>{h}</h3><p>{b}</p></div>)}
@@ -403,15 +531,32 @@ export default function App() {
       </footer>
       <p className="small" style={{ textAlign: 'center', padding: '0 0 20px' }}>ziro — List it. Sell it. Rent it. · ziro takes 10% from every sale · {SITE}</p>
 
-      {showSignin && <div className="modal"><div className="box"><h3>Sign in / Create account</h3>
-        <p className="small">Real sign-in uses Google and Facebook's own official pages. Full sign-in back into ziro needs the server keys set as environment variables (see README). No Apple sign-in.</p>
-        <a className="social" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }} href="https://accounts.google.com/AccountChooser" target="_blank" rel="noreferrer">Continue with Google</a>
-        <a className="social" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }} href="https://www.facebook.com/login.php" target="_blank" rel="noreferrer">Continue with Facebook</a>
-        <p className="small">Registered return addresses: {SITE}/signin/google/cb and {SITE}/signin/fb/cb</p>
-        <p className="small"><b>Already have an account?</b> Log in below.</p>
-        <label>Name</label><input value={account.name} onChange={e => setAccount({ ...account, name: e.target.value })} placeholder="Your name" />
-        <label>Email</label><input value={account.email} onChange={e => setAccount({ ...account, email: e.target.value })} placeholder="you@example.com" />
-        <button className="btn" onClick={signInLocal}>Create account / Log in</button>{' '}
+      {showSignin && <div className="modal"><div className="box">
+        {/* eBay-style sign-in: ZIRO's own page only asks you to pick
+            Google or Facebook. There is NO name / email / password form
+            in ZIRO at all — the buttons below send you to Google's and
+            Facebook's own official sign-in pages, and they send you back
+            here. No Apple sign-in. */}
+        {oauth && oauth.phase === 'confirm' ? <>
+          <h3>Create an account</h3>
+          <p>We&rsquo;ll use your {oauth.provider === 'google' ? 'Google' : 'Facebook'} details to create your ziro account.</p>
+          <p><b>{oauth.name}</b><br />{oauth.email}</p>
+          <button className="btn teal" onClick={confirmOAuthAccount}>Create account</button>{' '}
+          <button className="btn ghost" onClick={() => setOauth(null)}>Not you? Pick a different account</button>
+        </> : <>
+          <h3>{signinMode === 'create' ? 'Create an account' : 'Sign in to your account'}</h3>
+          {signinMode === 'create'
+            ? <p className="small">We&rsquo;ll use your Google or Facebook details to create your ziro account. Pick one below — you sign in on their own official page, then come straight back here.</p>
+            : <p><b>New to ziro?</b> <button className="btn ghost" onClick={() => setSigninMode('create')}>Create account</button></p>}
+          {signinMode === 'create' && <p><b>Already have an account?</b> <button className="btn ghost" onClick={() => setSigninMode('signin')}>Sign in</button></p>}
+          {oauth && oauth.phase === 'fetching' && <div className="panel"><p>{oauth.message}</p></div>}
+          {oauth && oauth.phase === 'error' && <div className="panel"><p>{oauth.message}</p><button className="btn ghost" onClick={() => setOauth(null)}>Try again</button></div>}
+          {(!oauth || oauth.phase === 'error') && <>
+            <button className="social" style={{ display: 'block', width: '100%', textAlign: 'center' }} onClick={startGoogle}>Continue with Google</button>
+            <button className="social" style={{ display: 'block', width: '100%', textAlign: 'center' }} onClick={startFacebook}>Continue with Facebook</button>
+          </>}
+          <p className="small">You pick your account on Google&rsquo;s or Facebook&rsquo;s own official page. No password is typed into ziro.</p>
+        </>}
         <button className="btn ghost" onClick={() => setShowSignin(false)}>Back to homepage</button>
       </div></div>}
 
