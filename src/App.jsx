@@ -228,7 +228,7 @@ export default function App() {
       client_id: facebookAppId,
       redirect_uri: redirectUri,
       response_type: 'code',
-      scope: 'email,public_profile',
+      scope: 'public_profile',
       state: oauthState(),
     })
     window.location.href = url
