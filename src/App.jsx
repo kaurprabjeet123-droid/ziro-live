@@ -258,10 +258,14 @@ export default function App() {
     setOauth({ provider, phase: 'fetching', message: `Signing you in with ${label}…` })
     setShowSignin(true)
     try {
+      // Facebook's callback path is /signin/fb/cb, not /signin/facebook/cb —
+      // the code was issued for that exact address, so the token swap
+      // must send the same one back, or Facebook rejects it.
+      const cbPath = provider === 'facebook' ? '/signin/fb/cb' : '/signin/google/cb'
       const res = await fetch(`/api/auth/${provider}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, redirectUri: window.location.origin + `/signin/${provider}/cb` }),
+        body: JSON.stringify({ code, redirectUri: window.location.origin + cbPath }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || (!data.email && !data.name)) {
