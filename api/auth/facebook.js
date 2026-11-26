@@ -66,11 +66,12 @@ export default async function handler(req, res) {
       })
     }
 
-    // 2. Ask Facebook who just signed in (name + email only).
+    // 2. Ask Facebook who just signed in (name only — the app is
+    // not approved for the email permission, so it is not asked for).
     const meUrl =
       'https://graph.facebook.com/v20.0/me?' +
       new URLSearchParams({
-        fields: 'id,name,email',
+        fields: 'id,name',
         access_token: token.access_token,
       })
     const meRes = await fetch(meUrl)
