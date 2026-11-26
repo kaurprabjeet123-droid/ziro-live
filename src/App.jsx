@@ -272,16 +272,24 @@ export default function App() {
         setOauth({ provider, phase: 'error', message: data.message || `Sign-in with ${label} did not work. Please try again.` })
         return
       }
-      // No create-account step: sign straight in and go to the homepage.
-      // No password, no phone code.
-      setUser({ name: data.name || (data.email ? data.email.split('@')[0] : label), email: data.email, how: label })
-      setOauth(null)
-      setShowSignin(false)
+      // eBay-style: after Google/Facebook sends you back, show a
+      // "Create an account" page with the name + email they sent,
+      // and one Create account button — like eBay's Register page.
+      // Tapping it signs you in and goes to the homepage.
+      setOauth({ provider, phase: 'confirm', name: data.name || (data.email ? data.email.split('@')[0] : label), email: data.email })
+      setShowSignin(true)
       try { window.history.replaceState({}, '', '/') } catch { /* ignore */ }
-      goRoute('home')
     } catch (e) {
       setOauth({ provider, phase: 'error', message: 'Could not reach ziro to finish signing in. Check your connection and try again.' })
     }
+  }
+  function confirmOAuthAccount() {
+    if (!oauth || oauth.phase !== 'confirm') return
+    const label = oauth.provider === 'google' ? 'Google' : 'Facebook'
+    setUser({ name: oauth.name || label, email: oauth.email, how: label })
+    setOauth(null)
+    setShowSignin(false)
+    goRoute('home')
   }
   // On load, catch the return from Google / Facebook.
   useEffect(() => {
@@ -611,11 +619,18 @@ export default function App() {
             Facebook's own official sign-in pages, and they send you back
             here. No Apple sign-in. */}
         <>
-          <h3>{signinMode === 'create' ? 'Create an account' : 'Sign in to your account'}</h3>
-          {signinMode === 'create'
+          <h3>{oauth && oauth.phase === 'confirm' ? 'Create an account' : signinMode === 'create' ? 'Create an account' : 'Sign in to your account'}</h3>
+          {(!oauth || oauth.phase !== 'confirm') && (signinMode === 'create'
             ? <p className="small">We&rsquo;ll use your Google or Facebook details to create your ziro account. Pick one below — you sign in on their own official page, then come straight back here.</p>
-            : <p><b>New to ziro?</b> <button className="btn ghost" onClick={() => setSigninMode('create')}>Create account</button></p>}
-          {signinMode === 'create' && <p><b>Already have an account?</b> <button className="btn ghost" onClick={() => setSigninMode('signin')}>Sign in</button></p>}
+            : <p><b>New to ziro?</b> <button className="btn ghost" onClick={() => setSigninMode('create')}>Create account</button></p>)}
+          {(!oauth || oauth.phase !== 'confirm') && signinMode === 'create' && <p><b>Already have an account?</b> <button className="btn ghost" onClick={() => setSigninMode('signin')}>Sign in</button></p>}
+          {oauth && oauth.phase === 'confirm' && <div>
+            <p>We&rsquo;ll use your {oauth.provider === 'google' ? 'Google' : 'Facebook'} details to create your ziro account.</p>
+            <p><b>{oauth.name}</b>{oauth.email && <><br />{oauth.email}</>}</p>
+            <p><button className="btn ghost" onClick={() => setOauth(null)}>Change</button></p>
+            <p className="small">Already using ziro? <button className="btn ghost" onClick={() => setOauth(null)}>Link to an existing account</button></p>
+            <p><button className="btn" style={{ width: '100%', padding: '14px' }} onClick={confirmOAuthAccount}>Create account</button></p>
+          </div>}
           {oauth && oauth.phase === 'fetching' && <div className="panel"><p>{oauth.message}</p></div>}
           {oauth && oauth.phase === 'error' && <div className="panel"><p>{oauth.message}</p><button className="btn ghost" onClick={() => setOauth(null)}>Try again</button></div>}
           {(!oauth || oauth.phase === 'error') && <>
