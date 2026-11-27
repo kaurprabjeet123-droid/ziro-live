@@ -28,9 +28,10 @@ header{position:sticky;top:0;background:#fff;z-index:5}
 .row2 button{background:#fff;border:1px solid #ddd;border-radius:4px;padding:7px 12px}
 .row2 .login{background:#000;color:#fff;border-color:#000}
 .row2 .signin{background:#141b56;color:#fff;border-color:#141b56}
-.cats{display:flex;justify-content:center;gap:14px;padding:10px 16px;overflow-x:auto;border-bottom:1px solid #eee}
-.cats button{border:1px solid #ddd;background:#fff;border-radius:4px;padding:7px 12px;white-space:nowrap}
-.cats button.on{background:#141b56;color:#fff;border-color:#141b56}
+.cats{display:flex;justify-content:flex-start;gap:26px;padding:10px 16px;overflow-x:auto;border-bottom:1px solid #eee}
+.cats button{border:0;background:none;border-radius:0;padding:4px 0;white-space:nowrap;color:#333;font-size:14px}
+.cats button:hover{color:#141b56;text-decoration:underline}
+.cats button.on{background:none;color:#141b56;border:0;font-weight:700;border-bottom:2px solid #141b56}
 .wrap{max-width:1100px;margin:0 auto;padding:16px}
 .banner{background:#141b56;color:#fff;border-radius:16px;padding:0 0 0 22px;display:flex;justify-content:space-between;align-items:stretch;gap:16px;overflow:hidden}
 .banner .b-txt{padding:22px 0}
