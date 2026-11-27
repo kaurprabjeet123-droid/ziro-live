@@ -302,7 +302,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const liveAds = useMemo(() => ads.filter(a => a.status === 'LIVE'), [ads])
+  const liveAds = useMemo(() => ads.filter(a => a.status === 'LIVE').sort((a, b) => (b.clicks || 0) - (a.clicks || 0)), [ads])
   useEffect(() => {
     if (liveAds.length < 2) return
     const t = setInterval(() => {
