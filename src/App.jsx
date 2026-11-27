@@ -675,6 +675,7 @@ export default function App() {
         {sellPhoto && <img src={sellPhoto} alt="Your item" style={{ maxWidth: '100%', maxHeight: 180, objectFit: 'contain' }} />}
         <label>Description</label><textarea value={form.desc} onChange={e => setForm({ ...form, desc: e.target.value })} />
         <label>Price ($)</label><input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
+        <p className="small" style={{ color: '#888', marginTop: 2 }}>ziro takes 10% of the price</p>
         <label>Category</label><select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>{CATEGORIES.filter(c => c !== 'All').map(c => <option key={c}>{c}</option>)}</select>
         <label>City</label><select value={form.city} onChange={e => setForm({ ...form, city: e.target.value })}>{CITIES.map(c => <option key={c}>{c}</option>)}</select>
         <label>Condition</label><select value={form.condition} onChange={e => setForm({ ...form, condition: e.target.value })}><option>New</option><option>Like New</option><option>Used</option></select>
