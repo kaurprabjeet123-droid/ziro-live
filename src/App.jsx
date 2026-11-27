@@ -314,9 +314,10 @@ export default function App() {
   const ad = liveAds.length ? liveAds[adIndex % liveAds.length] : null
 
   const all = useMemo(() => [...userListings, ...LISTINGS], [userListings])
+  const citiesWithListings = useMemo(() => ['All cities', ...new Set(all.map(p => p.city).filter(Boolean))], [all])
   const filtered = useMemo(() => {
-    let list = all.filter(p => matchesFilter(p, browse, saved, recent) && (category === 'All' || !browse || browse.kind !== 'cat' || p.category === category) && (city === 'All cities' || p.city === city))
-    if (browse && browse.kind === 'cat') list = all.filter(p => matchesFilter(p, browse, saved, recent) && (city === 'All cities' || p.city === city))
+    let list = all.filter(p => matchesFilter(p, browse, saved, recent) && (category === 'All' || !browse || browse.kind !== 'cat' || p.category === category) && (city === 'All cities' || p.city.toLowerCase().includes(city.toLowerCase())))
+    if (browse && browse.kind === 'cat') list = all.filter(p => matchesFilter(p, browse, saved, recent) && (city === 'All cities' || p.city.toLowerCase().includes(city.toLowerCase())))
     if (sort === 'Price low to high') list = [...list].sort((a, b) => a.price - b.price)
     if (sort === 'Price high to low') list = [...list].sort((a, b) => b.price - a.price)
     if (sort === 'Nearest') list = [...list].sort((a, b) => a.distanceKm - b.distanceKm)
@@ -539,7 +540,8 @@ export default function App() {
       {route === 'browse' && <div className="wrap">
         <h2>{browse ? browse.title : 'All listings'}</h2>
         <div className="filters">
-          <select value={city} onChange={e => setCity(e.target.value)}><option>All cities</option>{CITIES.map(c => <option key={c}>{c}</option>)}</select>
+          <input list="citylist" value={city} onChange={e => setCity(e.target.value)} placeholder="Search a city" aria-label="Search cities" />
+          <datalist id="citylist">{citiesWithListings.map(c => <option key={c} value={c} />)}</datalist>
           <select value={sort} onChange={e => setSort(e.target.value)}><option>Newest</option><option>Price low to high</option><option>Price high to low</option><option>Nearest</option></select>
           <span className="small">{filtered.length} listings</span>
         </div>
