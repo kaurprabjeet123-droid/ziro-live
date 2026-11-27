@@ -1,12 +1,12 @@
 # ziro — standalone live build
 
-A standalone, deployable copy of **ziro**, the GTA reselling marketplace.
+A standalone, deployable copy of **ziro**, the worldwide reselling marketplace.
 Built as a Vite + React app so Vercel can deploy it from GitHub.
 It does **not** depend on Muse.
 
 - Name: lowercase `ziro`, deep navy `#141B56`, vibrant teal `#00B0A9`
 - Flat, utilitarian eBay / Facebook Marketplace style
-- No sample listings — the site starts empty, ready for real sellers, across 10 GTA cities, Rent It, Best deals, Local deals,
+- No sample listings — the site starts empty, ready for real sellers, from cities around the world, Rent It, Best deals, Local deals,
   Saved / Watch / price-drop alerts, Chat, Sell / Your listings, ads,
   payment-methods demo, Terms / Privacy / Safety / Launch checklist
 - **Real photos**: the original's own photo assets are bundled in
