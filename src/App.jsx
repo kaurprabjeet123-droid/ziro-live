@@ -438,21 +438,36 @@ export default function App() {
   return (
     <div>
       <header>
+        <div className="utilbar">
+          <span>Hi! {user ? <b>{user.name}</b> : <><button className="linklike" onClick={() => openSignin('signin')}>Sign in</button> or <button className="linklike" onClick={() => openSignin('create')}>register</button></>}</span>
+          <button className="linklike" onClick={() => goBrowse({ kind: 'best', title: 'Best deals' })}>Deals</button>
+          <button className="linklike" onClick={() => goInfo('contact')}>Help &amp; Contact</button>
+          <span className="utilright">
+            <button className="linklike" onClick={() => openSell()}>Sell ▾</button>
+            <button className="linklike" onClick={() => goRoute('saved')}>Watchlist ▾</button>
+            <button className="linklike" onClick={() => goRoute('account')}>My ziro ▾</button>
+            <button className="utilicon" onClick={() => goRoute('alerts')} aria-label="Alerts">🔔{unread ? <span className="badge">{unread}</span> : ''}</button>
+            <button className="utilicon" onClick={() => goRoute('pay')} aria-label="Pay">🛒</button>
+          </span>
+        </div>
         <div className="topbar">
           <button className="logo" onClick={() => goRoute('home')} aria-label="ziro home"><img src="/assets/logo.png" alt="ziro" /></button>
+          <button className="shopby" onClick={() => goBrowse({ kind: 'cat', value: 'All', title: 'All listings' })}>Shop by<br />category ▾</button>
           <div className="searchbar">
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search for items" aria-label="Search for items" onKeyDown={e => { if (e.key === 'Enter') doSearch() }} />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search for anything" aria-label="Search for items" onKeyDown={e => { if (e.key === 'Enter') doSearch() }} />
             <button className="snapbtn" title="SNAP IT" aria-label="SNAP IT" onClick={() => setShowSnap(true)}><ScanIcon /></button>
-            <button className="searchbtn" onClick={doSearch}>Search</button>
+            <select className="catselect" value={category} onChange={e => goBrowse({ kind: 'cat', value: e.target.value, title: e.target.value === 'All' ? 'All listings' : e.target.value })} aria-label="All Categories">{CATEGORIES.map(c => <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}</option>)}</select>
           </div>
+          <button className="searchbtn" onClick={doSearch}>Search</button>
+          <button className="linklike adv" onClick={() => goBrowse({ kind: 'cat', value: 'All', title: 'All listings' })}>Advanced</button>
           <button className="sellbtn" onClick={() => openSell()}>🛍️ SELL +</button>
+          <button className="adsbtn" onClick={() => goRoute('ads')}>📣 Ads · from $0.99</button>
           {user && <button className="acctbtn" onClick={() => goRoute('account')} aria-label="Your account">{user.name[0].toUpperCase()}</button>}
         </div>
         <div className="row2">
           <button onClick={() => goRoute('saved')}>❤️ Saved {saved.length ? `(${saved.length})` : ''}</button>
           <button onClick={() => goRoute('alerts')}>🔔 Alerts {unread ? <span className="badge">{unread}</span> : ''}</button>
           <button onClick={() => goRoute('chat')}>💬 Chat</button>
-          <button onClick={() => goRoute('ads')}>📣 Ads · from $0.99</button>
           <button onClick={() => goRoute('pay')}>💳 Pay</button>
           {user ? <button onClick={() => goRoute('account')}>{user.name}</button> : <>
             <button className="login" onClick={() => openSignin('signin')}>🔑 Log in</button>
