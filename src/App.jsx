@@ -443,11 +443,8 @@ export default function App() {
           <button className="linklike" onClick={() => goBrowse({ kind: 'best', title: 'Best deals' })}>Deals</button>
           <button className="linklike" onClick={() => goInfo('contact')}>Help &amp; Contact</button>
           <span className="utilright">
-            <button className="linklike" onClick={() => openSell()}>Sell ▾</button>
-            <button className="linklike" onClick={() => goRoute('saved')}>Watchlist ▾</button>
-            <button className="linklike" onClick={() => goRoute('account')}>My ziro ▾</button>
-            <button className="utilicon" onClick={() => goRoute('alerts')} aria-label="Alerts">🔔{unread ? <span className="badge">{unread}</span> : ''}</button>
-            <button className="utilicon" onClick={() => goRoute('pay')} aria-label="Pay">🛒</button>
+            <button className="utilicon" onClick={() => goRoute('alerts')} aria-label="Alerts">Alerts{unread ? <span className="badge">{unread}</span> : ''}</button>
+            <button className="utilicon" onClick={() => goRoute('pay')} aria-label="Pay">Pay</button>
           </span>
         </div>
         <div className="topbar">
@@ -460,18 +457,18 @@ export default function App() {
           </div>
           <button className="searchbtn" onClick={doSearch}>Search</button>
           <button className="linklike adv" onClick={() => goBrowse({ kind: 'cat', value: 'All', title: 'All listings' })}>Advanced</button>
-          <button className="sellbtn" onClick={() => openSell()}>🛍️ SELL +</button>
-          <button className="adsbtn" onClick={() => goRoute('ads')}>📣 Ads · from $0.99</button>
+          <button className="sellbtn" onClick={() => openSell()}>SELL +</button>
+          <button className="adsbtn" onClick={() => goRoute('ads')}>Ads · from $0.99</button>
           {user && <button className="acctbtn" onClick={() => goRoute('account')} aria-label="Your account">{user.name[0].toUpperCase()}</button>}
         </div>
         <div className="row2">
-          <button onClick={() => goRoute('saved')}>❤️ Saved {saved.length ? `(${saved.length})` : ''}</button>
-          <button onClick={() => goRoute('alerts')}>🔔 Alerts {unread ? <span className="badge">{unread}</span> : ''}</button>
-          <button onClick={() => goRoute('chat')}>💬 Chat</button>
-          <button onClick={() => goRoute('pay')}>💳 Pay</button>
+          <button onClick={() => goRoute('saved')}>Saved {saved.length ? `(${saved.length})` : ''}</button>
+          <button onClick={() => goRoute('alerts')}>Alerts {unread ? <span className="badge">{unread}</span> : ''}</button>
+          <button onClick={() => goRoute('chat')}>Chat</button>
+          <button onClick={() => goRoute('pay')}>Pay</button>
           {user ? <button onClick={() => goRoute('account')}>{user.name}</button> : <>
-            <button className="login" onClick={() => openSignin('signin')}>🔑 Log in</button>
-            <button className="signin" onClick={() => openSignin('signin')}>👤 Sign in</button>
+            <button className="login" onClick={() => openSignin('signin')}>Log in</button>
+            <button className="signin" onClick={() => openSignin('signin')}>Sign in</button>
           </>}
         </div>
         <div className="cats">{CATEGORIES.map(c => <button key={c} className={category === c && route === 'browse' ? 'on' : ''} onClick={() => goBrowse({ kind: 'cat', value: c, title: c === 'All' ? 'All listings' : c })}>{c}</button>)}</div>
