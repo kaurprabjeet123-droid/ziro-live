@@ -445,18 +445,18 @@ export default function App() {
             <button className="snapbtn" title="SNAP IT" aria-label="SNAP IT" onClick={() => setShowSnap(true)}><ScanIcon /></button>
             <button className="searchbtn" onClick={doSearch}>Search</button>
           </div>
-          <button className="sellbtn" onClick={() => openSell()}>SELL +</button>
+          <button className="sellbtn" onClick={() => openSell()}>🛍️ SELL +</button>
           {user && <button className="acctbtn" onClick={() => goRoute('account')} aria-label="Your account">{user.name[0].toUpperCase()}</button>}
         </div>
         <div className="row2">
-          <button onClick={() => goRoute('saved')}>Saved {saved.length ? `(${saved.length})` : ''}</button>
-          <button onClick={() => goRoute('alerts')}>Alerts {unread ? <span className="badge">{unread}</span> : ''}</button>
+          <button onClick={() => goRoute('saved')}>❤️ Saved {saved.length ? `(${saved.length})` : ''}</button>
+          <button onClick={() => goRoute('alerts')}>🔔 Alerts {unread ? <span className="badge">{unread}</span> : ''}</button>
           <button onClick={() => goRoute('chat')}>💬 Chat</button>
-          <button onClick={() => goRoute('ads')}>Ads · from $0.99</button>
-          <button onClick={() => goRoute('pay')}>Pay</button>
+          <button onClick={() => goRoute('ads')}>📣 Ads · from $0.99</button>
+          <button onClick={() => goRoute('pay')}>💳 Pay</button>
           {user ? <button onClick={() => goRoute('account')}>{user.name}</button> : <>
-            <button className="login" onClick={() => openSignin('signin')}>Log in</button>
-            <button className="signin" onClick={() => openSignin('signin')}>Sign in</button>
+            <button className="login" onClick={() => openSignin('signin')}>🔑 Log in</button>
+            <button className="signin" onClick={() => openSignin('signin')}>👤 Sign in</button>
           </>}
         </div>
         <div className="cats">{CATEGORIES.map(c => <button key={c} className={category === c && route === 'browse' ? 'on' : ''} onClick={() => goBrowse({ kind: 'cat', value: c, title: c === 'All' ? 'All listings' : c })}>{c}</button>)}</div>
