@@ -375,7 +375,7 @@ export default function App() {
     const price = Number(form.price)
     const item = { id: Date.now(), title: form.title, price, rentPerDay: rentOf(price), rentDeposit: depOf(price), category: form.category, city: form.city, distanceKm: 1, condition: form.condition, seller: user ? '@' + user.name.toLowerCase().replace(/\s+/g, '_') : '@you', time: 'Just now', photo: sellPhoto || '/assets/mysterybox.jpg', group: groupOf(form.title, form.category), desc: form.desc || 'Listed on ziro.', shipping: Number(form.shipping || 0), specs: form.specifics || '', clicks: 0, seed: false, store: form.store, email: form.email, returns: form.returns, offers: form.offers, quantity: Number(form.quantity || 1), listingType: form.listingType, country: form.country }
     setUserListings(u => [item, ...u]); setShowSell(false); setSellPhoto(null)
-    setForm({ email: '', store: '', title: '', price: '', desc: '', category: 'Clothing', city: 'Toronto', condition: 'Used', shipping: 5, distance: 10, returns: 'No returns', offers: true, quantity: 1, specifics: '' })
+    setForm({ email: '', store: '', title: '', price: '', desc: '', category: 'Clothing', city: 'Toronto', country: '', condition: 'Used', shipping: 5, distance: 10, returns: 'No returns', offers: true, quantity: 1, specifics: '', listingType: 'For sale' })
     goRoute('mine')
   }
   function saveEdit(id, title, price, desc) {
@@ -548,7 +548,7 @@ export default function App() {
           <span className="small">{filtered.length} listings</span>
         </div>
         {browse && browse.kind === 'recent' && recent.length > 0 && <p><button className="btn ghost" onClick={() => { if (needLogin()) return; setRecent([]) }}>Clear history</button></p>}
-        {filtered.length === 0 && <p className="empty">No listings yet — be the first to list something! <button className="btn teal" onClick={() => openSell()}>List yours right now!</button></p>}
+        {filtered.length === 0 && <p className="empty">{city !== 'All cities' ? `No listings in ${city} yet — be the first to list something here! ` : 'No listings yet — be the first to list something! '}<button className="btn teal" onClick={() => openSell()}>List yours right now!</button></p>}
         <div className="grid">{filtered.map(p => <Card key={p.id} p={p} saved={saved.includes(p.id)} onSave={toggleSave} onOpen={openProduct} onWatch={toggleWatch} watched={watched.includes(p.id)} />)}</div>
       </div>}
 
