@@ -315,7 +315,7 @@ export default function App() {
   const ad = liveAds.length ? liveAds[adIndex % liveAds.length] : null
 
   const all = useMemo(() => [...userListings, ...LISTINGS], [userListings])
-  const citiesWithListings = useMemo(() => ['All cities', ...new Set(all.flatMap(p => [p.city, p.country]).filter(Boolean))], [all])
+  const citiesWithListings = useMemo(() => ['All cities', ...new Set([...CITIES, 'Canada', 'USA', 'United States', 'UK', 'United Kingdom', 'France', 'Germany', 'Japan', 'Australia', 'India', 'UAE', ...all.flatMap(p => [p.city, p.country]).filter(Boolean)])], [all])
   const filtered = useMemo(() => {
     let list = all.filter(p => matchesFilter(p, browse, saved, recent) && (category === 'All' || !browse || browse.kind !== 'cat' || p.category === category) && (city === 'All cities' || p.city.toLowerCase().includes(city.toLowerCase()) || (p.country || '').toLowerCase().includes(city.toLowerCase())))
     if (browse && browse.kind === 'cat') list = all.filter(p => matchesFilter(p, browse, saved, recent) && (city === 'All cities' || p.city.toLowerCase().includes(city.toLowerCase()) || (p.country || '').toLowerCase().includes(city.toLowerCase())))
