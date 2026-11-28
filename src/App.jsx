@@ -48,7 +48,7 @@ function Card({ p, saved, onSave, onOpen, onWatch, watched }) {
         <button className={'heart' + (saved ? ' on' : '')} onClick={() => onSave(p.id)} aria-label="Save">{saved ? '♥' : '♡'}</button>
         <div className="price">${p.price}</div>
         <div className="title" role="button" onClick={() => onOpen(p)}>{p.title}</div>
-        <div className="meta">{p.condition} · {p.city} · {p.time}</div>
+        <div className="meta">{p.listingType ? `${p.listingType} · ` : ''}{p.condition} · {p.city}{p.country ? `, ${p.country}` : ''} · {p.time}</div>
         <div className="meta">Rent it · ${p.rentPerDay}/day</div>
         <div className="meta">{p.seller}</div>
         <button className="watchbtn" onClick={() => onWatch(p.id)}>{watched ? '✓ Watching' : 'Watch'}</button>
@@ -110,6 +110,7 @@ export default function App() {
   const [showSnap, setShowSnap] = useState(false)
   const [showSell, setShowSell] = useState(false)
   const [showChat, setShowChat] = useState(null)
+  const [notice, setNotice] = useState('')
   const [ads, setAds] = useState(() => loadFor('ads', ADS, load('ziro_user', null)))
   const [adIndex, setAdIndex] = useState(0)
   const [adFade, setAdFade] = useState(false)
@@ -126,7 +127,7 @@ export default function App() {
   const [adForm, setAdForm] = useState({ business: '', title: '', desc: '', type: 'image', link: '', place: 'Home page banner' })
   const [adMedia, setAdMedia] = useState(null)
   const [sellPhoto, setSellPhoto] = useState(null)
-  const [form, setForm] = useState({ email: '', store: '', title: '', price: '', desc: '', category: 'Clothing', city: 'Toronto', condition: 'Used', shipping: 5, distance: 10, returns: 'No returns', offers: true, quantity: 1, specifics: '' })
+  const [form, setForm] = useState({ email: '', store: '', title: '', price: '', desc: '', category: 'Clothing', city: 'Toronto', country: '', condition: 'Used', shipping: 5, distance: 10, returns: 'No returns', offers: true, quantity: 1, specifics: '', listingType: 'For sale' })
   const fileRef = useRef(null)
   // Real OAuth return flow (like eBay: Google -> back to ziro).
   const [oauth, setOauth] = useState(null) // {provider, phase, name, email, message}
@@ -314,10 +315,10 @@ export default function App() {
   const ad = liveAds.length ? liveAds[adIndex % liveAds.length] : null
 
   const all = useMemo(() => [...userListings, ...LISTINGS], [userListings])
-  const citiesWithListings = useMemo(() => ['All cities', ...new Set(all.map(p => p.city).filter(Boolean))], [all])
+  const citiesWithListings = useMemo(() => ['All cities', ...new Set(all.flatMap(p => [p.city, p.country]).filter(Boolean))], [all])
   const filtered = useMemo(() => {
-    let list = all.filter(p => matchesFilter(p, browse, saved, recent) && (category === 'All' || !browse || browse.kind !== 'cat' || p.category === category) && (city === 'All cities' || p.city.toLowerCase().includes(city.toLowerCase())))
-    if (browse && browse.kind === 'cat') list = all.filter(p => matchesFilter(p, browse, saved, recent) && (city === 'All cities' || p.city.toLowerCase().includes(city.toLowerCase())))
+    let list = all.filter(p => matchesFilter(p, browse, saved, recent) && (category === 'All' || !browse || browse.kind !== 'cat' || p.category === category) && (city === 'All cities' || p.city.toLowerCase().includes(city.toLowerCase()) || (p.country || '').toLowerCase().includes(city.toLowerCase())))
+    if (browse && browse.kind === 'cat') list = all.filter(p => matchesFilter(p, browse, saved, recent) && (city === 'All cities' || p.city.toLowerCase().includes(city.toLowerCase()) || (p.country || '').toLowerCase().includes(city.toLowerCase())))
     if (sort === 'Price low to high') list = [...list].sort((a, b) => a.price - b.price)
     if (sort === 'Price high to low') list = [...list].sort((a, b) => b.price - a.price)
     if (sort === 'Nearest') list = [...list].sort((a, b) => a.distanceKm - b.distanceKm)
@@ -325,7 +326,7 @@ export default function App() {
     return list
   }, [all, browse, category, city, sort, saved, recent])
   const bestDeals = useMemo(() => [...all].sort((a, b) => a.price - b.price).slice(0, 8), [all])
-  const rentals = useMemo(() => [...all].sort((a, b) => a.price - b.price || b.id - a.id).slice(0, 8), [all])
+  const rentals = useMemo(() => [...all].filter(p => p.listingType !== 'For sale').sort((a, b) => a.price - b.price || b.id - a.id).slice(0, 8), [all])
   const localDeals = useMemo(() => all.filter(p => p.price <= 25 && p.distanceKm <= 5).sort((a, b) => a.distanceKm - b.distanceKm), [all])
   const unread = notifications.filter(n => !n.read).length
 
@@ -372,7 +373,7 @@ export default function App() {
     if (needLogin()) return
     if (!form.title || !form.price || Number(form.price) <= 0) return alert('Add a title and a price over $0.')
     const price = Number(form.price)
-    const item = { id: Date.now(), title: form.title, price, rentPerDay: rentOf(price), rentDeposit: depOf(price), category: form.category, city: form.city, distanceKm: 1, condition: form.condition, seller: user ? '@' + user.name.toLowerCase().replace(/\s+/g, '_') : '@you', time: 'Just now', photo: sellPhoto || '/assets/mysterybox.jpg', group: groupOf(form.title, form.category), desc: form.desc || 'Listed on ziro.', shipping: Number(form.shipping || 0), specs: form.specifics || '', clicks: 0, seed: false, store: form.store, email: form.email, returns: form.returns, offers: form.offers, quantity: Number(form.quantity || 1) }
+    const item = { id: Date.now(), title: form.title, price, rentPerDay: rentOf(price), rentDeposit: depOf(price), category: form.category, city: form.city, distanceKm: 1, condition: form.condition, seller: user ? '@' + user.name.toLowerCase().replace(/\s+/g, '_') : '@you', time: 'Just now', photo: sellPhoto || '/assets/mysterybox.jpg', group: groupOf(form.title, form.category), desc: form.desc || 'Listed on ziro.', shipping: Number(form.shipping || 0), specs: form.specifics || '', clicks: 0, seed: false, store: form.store, email: form.email, returns: form.returns, offers: form.offers, quantity: Number(form.quantity || 1), listingType: form.listingType, country: form.country }
     setUserListings(u => [item, ...u]); setShowSell(false); setSellPhoto(null)
     setForm({ email: '', store: '', title: '', price: '', desc: '', category: 'Clothing', city: 'Toronto', condition: 'Used', shipping: 5, distance: 10, returns: 'No returns', offers: true, quantity: 1, specifics: '' })
     goRoute('mine')
@@ -404,7 +405,7 @@ export default function App() {
     if (!card) return alert('Add a payment method first (Pay page). This demo stores only card brand, last 4 and expiry — no real money moves.')
     setPayments(p => [{ id: Date.now(), label: checkout.label, amount: checkout.amount, date: new Date().toLocaleDateString() }, ...p])
     if (checkout.adId) setAds(a => a.map(x => x.id === checkout.adId ? { ...x, status: 'LIVE' } : x))
-    alert('Paid (demo). No real money moved.')
+    setNotice('Paid (demo). No real money moved.')
     setCheckout(null)
   }
   function openSignin(mode) { setSigninMode(mode === 'create' ? 'create' : 'signin'); setOauth(null); setShowSignin(true) }
@@ -423,7 +424,7 @@ export default function App() {
     const price = adForm.type === 'video' ? 2.99 : 0.99
     const item = { id: Date.now(), business: adForm.business, title: adForm.title, desc: adForm.desc, type: adForm.type, media: adMedia || null, listingId: null, place: adForm.place, clicks: 0, price, status: 'PENDING' }
     setAds(a => [...a, item]); setAdMedia(null); setAdForm({ business: '', title: '', desc: '', type: 'image', link: '', place: 'Home page banner' })
-    alert('Ad submitted. It stays PENDING and invisible until paid, then it goes LIVE.')
+    setNotice('Ad submitted. It stays PENDING and invisible until paid, then it goes LIVE.')
   }
   function onPhotoFile(e, setter) {
     const f = e.target.files && e.target.files[0]
@@ -474,6 +475,7 @@ export default function App() {
         </div>
         <div className="cats">{CATEGORIES.map(c => <button key={c} className={category === c && route === 'browse' ? 'on' : ''} onClick={() => goBrowse({ kind: 'cat', value: c, title: c === 'All' ? 'All listings' : c })}>{c}</button>)}</div>
       </header>
+      {notice && <div className="wrap" style={{ marginTop: 8 }}><div className="panel" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><span>{notice}</span><button className="btn ghost" onClick={() => setNotice('')}>OK</button></div></div>}
 
       {query && route === 'home' && recs.length > 0 && <div className="wrap"><div className="panel"><b>Recommendations</b>{recs.map(p => <div key={p.id} className="rec" role="button" onClick={() => openProduct(p)}><img src={p.photo} alt="" /> {p.title} — ${p.price}</div>)}</div></div>}
 
@@ -540,7 +542,7 @@ export default function App() {
       {route === 'browse' && <div className="wrap">
         <h2>{browse ? browse.title : 'All listings'}</h2>
         <div className="filters">
-          <input list="citylist" value={city} onChange={e => setCity(e.target.value)} placeholder="Search a city" aria-label="Search cities" />
+          <input list="citylist" value={city} onChange={e => setCity(e.target.value)} placeholder="Search a city or country" aria-label="Search cities or countries" />
           <datalist id="citylist">{citiesWithListings.map(c => <option key={c} value={c} />)}</datalist>
           <select value={sort} onChange={e => setSort(e.target.value)}><option>Newest</option><option>Price low to high</option><option>Price high to low</option><option>Nearest</option></select>
           <span className="small">{filtered.length} listings</span>
@@ -556,20 +558,20 @@ export default function App() {
           <img className="prod-photo" src={product.photo || '/assets/mysterybox.jpg'} alt={product.title} />
           <h2>{product.title}</h2><p className="price" style={{ fontSize: 24 }}>${product.price}</p>
           <p>{product.desc}</p>
-          <p className="small">{product.condition} · {product.city} · {product.seller} · {product.time} · Shipping ${product.shipping} · {product.distanceKm} km away{product.clicks ? ` · ${product.clicks} views` : ''}</p>
+          <p className="small">{product.listingType ? `${product.listingType} · ` : ''}{product.condition} · {product.city} · {product.seller} · {product.time} · Shipping ${product.shipping} · {product.distanceKm} km away{product.clicks ? ` · ${product.clicks} views` : ''}</p>
           {product.specs && <p className="small"><b>Item specifics:</b> {product.specs}</p>}
           <button className="btn ghost" onClick={() => toggleSave(product.id)}>{saved.includes(product.id) ? '♥ Saved' : '♡ Save'}</button>{' '}
           <button className="btn ghost" onClick={() => toggleWatch(product.id)}>{watched.includes(product.id) ? '✓ Watching' : 'Watch'}</button>{' '}
           <button className="btn ghost" onClick={() => { if (needLogin()) return; navigator.clipboard?.writeText(SITE + '/listing/' + product.id); alert('Link copied to share.') }}>Share</button>{' '}
           <button className="btn ghost" onClick={() => { if (needLogin()) return; const r = prompt('Report this listing — what is wrong? (e.g. scam, wrong item, rude seller, other)'); if (r) { setReports(x => [...x, { id: Date.now(), listing: product.title, reason: r }]); alert('Thanks. Your report was sent.') } }}>Report</button>
         </div>
-        <div className="panel"><h3>Rent It</h3>
+        {product.listingType === 'For sale' ? <div className="panel"><h3>For sale</h3><p>This item is for sale at ${product.price}. Make an offer below or message the seller.</p></div> : <div className="panel"><h3>Rent It</h3>
           <p>Rent it · ${product.rentPerDay}/day · Refundable deposit ${product.rentDeposit} (half the buy price)</p>
           <div className="filters">{[1, 3, 7, 14, 30].map(d => <button key={d} className={'btn ' + (rentDays === d ? '' : 'ghost')} onClick={() => setRentDays(d)}>{d} day{d > 1 ? 's' : ''}</button>)}</div>
           <p><b>Total: ${product.rentPerDay * rentDays + product.rentDeposit}</b> ({rentDays} days × ${product.rentPerDay} + ${product.rentDeposit} deposit)</p>
           <button className="btn teal" onClick={() => startCheckout({ label: `Rent: ${product.title} (${rentDays} days)`, amount: product.rentPerDay * rentDays + product.rentDeposit })}>Rent It</button>
           <p className="small">No Buy Now — Rent It is the way to get this item.</p>
-        </div>
+        </div>}
         {product.offers !== false && <div className="panel"><h3>Make Offer</h3><input type="number" value={offer} onChange={e => setOffer(e.target.value)} placeholder="Your offer in $" /><button className="btn" onClick={() => { if (needLogin()) return; if (offer) { alert('Offer sent to ' + product.seller); setOffer('') } }}>Send offer</button></div>}
         <div className="panel"><button className="btn" onClick={() => messageSeller(product)}>Message Seller</button></div>
         <div className="panel"><h3>Seller Reviews</h3>{(REVIEWS[sellerKey(product.seller)] || []).length === 0 ? <p>No reviews yet.</p> : (REVIEWS[sellerKey(product.seller)] || []).map((r, i) => <p key={i}>{'★'.repeat(r[1] ?? r.stars)} {r[0] ?? r.user} — {r[2] ?? r.text}</p>)}</div>
@@ -672,11 +674,13 @@ export default function App() {
         <input type="file" accept="image/*" onChange={e => onPhotoFile(e, setSellPhoto)} />
         <label className="btn teal" style={{ display: 'inline-block', textAlign: 'center', marginTop: 6 }}>Take Photo<input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => onPhotoFile(e, setSellPhoto)} /></label>
         {sellPhoto && <img src={sellPhoto} alt="Your item" style={{ maxWidth: '100%', maxHeight: 180, objectFit: 'contain' }} />}
+        <label>Sell it or rent it out?</label><select value={form.listingType} onChange={e => setForm({ ...form, listingType: e.target.value })}><option>For sale</option><option>For rent</option></select>
         <label>Description</label><textarea value={form.desc} onChange={e => setForm({ ...form, desc: e.target.value })} />
         <label>Price ($)</label><input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
         <p className="small" style={{ color: '#888', marginTop: 2 }}>ziro takes 10% of the price</p>
         <label>Category</label><select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>{CATEGORIES.filter(c => c !== 'All').map(c => <option key={c}>{c}</option>)}</select>
-        <label>City</label><select value={form.city} onChange={e => setForm({ ...form, city: e.target.value })}>{CITIES.map(c => <option key={c}>{c}</option>)}</select>
+        <label>City</label><input list="sellcities" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="Type any city in the world" /><datalist id="sellcities">{CITIES.map(c => <option key={c} value={c} />)}</datalist>
+        <label>Country</label><input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} placeholder="Type any country in the world" />
         <label>Condition</label><select value={form.condition} onChange={e => setForm({ ...form, condition: e.target.value })}><option>New</option><option>Like New</option><option>Used</option></select>
         <label>Shipping rate ($)</label><input type="number" value={form.shipping} onChange={e => setForm({ ...form, shipping: e.target.value })} />
         <label>Max distance (km)</label><input type="number" value={form.distance} onChange={e => setForm({ ...form, distance: e.target.value })} />
